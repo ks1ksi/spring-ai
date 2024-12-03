@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
 
 import java.io.IOException;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.ai.document.DocumentMetadata;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -121,7 +123,7 @@ class ElasticsearchVectorStoreIT {
 
 			assertThat(stats.total().docs().count()).isEqualTo(0L);
 
-			vectorStore.add(documents);
+			vectorStore.add(this.documents);
 			elasticsearchClient.indices().refresh();
 			stats = elasticsearchClient.indices()
 				.stats(s -> s.index("spring-ai-document-index"))
@@ -148,7 +150,7 @@ class ElasticsearchVectorStoreIT {
 			ElasticsearchVectorStore vectorStore = context.getBean("vectorStore_" + similarityFunction,
 					ElasticsearchVectorStore.class);
 
-			vectorStore.add(documents);
+			vectorStore.add(this.documents);
 
 			Awaitility.await()
 				.until(() -> vectorStore
@@ -160,14 +162,14 @@ class ElasticsearchVectorStoreIT {
 
 			assertThat(results).hasSize(1);
 			Document resultDoc = results.get(0);
-			assertThat(resultDoc.getId()).isEqualTo(documents.get(2).getId());
+			assertThat(resultDoc.getId()).isEqualTo(this.documents.get(2).getId());
 			assertThat(resultDoc.getContent()).contains("The Great Depression (1929–1939) was an economic shock");
 			assertThat(resultDoc.getMetadata()).hasSize(2);
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			// Remove all documents from the store
-			vectorStore.delete(documents.stream().map(Document::getId).toList());
+			vectorStore.delete(this.documents.stream().map(Document::getId).toList());
 
 			Awaitility.await()
 				.until(() -> vectorStore
@@ -266,7 +268,7 @@ class ElasticsearchVectorStoreIT {
 			assertThat(results.get(0).getId()).isEqualTo(bgDocument2.getId());
 
 			// Remove all documents from the store
-			vectorStore.delete(documents.stream().map(Document::getId).toList());
+			vectorStore.delete(this.documents.stream().map(Document::getId).toList());
 
 			Awaitility.await()
 				.until(() -> vectorStore.similaritySearch(SearchRequest.query("The World").withTopK(1)), hasSize(0));
@@ -298,7 +300,7 @@ class ElasticsearchVectorStoreIT {
 			assertThat(resultDoc.getId()).isEqualTo(document.getId());
 			assertThat(resultDoc.getContent()).isEqualTo("Spring AI rocks!!");
 			assertThat(resultDoc.getMetadata()).containsKey("meta1");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			Document sameIdDocument = new Document(document.getId(),
 					"The World is Big and Salvation Lurks Around the Corner", Map.of("meta2", "meta2"));
@@ -317,7 +319,7 @@ class ElasticsearchVectorStoreIT {
 			assertThat(resultDoc.getId()).isEqualTo(document.getId());
 			assertThat(resultDoc.getContent()).isEqualTo("The World is Big and Salvation Lurks Around the Corner");
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			// Remove all documents from the store
 			vectorStore.delete(List.of(document.getId()));
@@ -334,7 +336,7 @@ class ElasticsearchVectorStoreIT {
 			ElasticsearchVectorStore vectorStore = context.getBean("vectorStore_" + similarityFunction,
 					ElasticsearchVectorStore.class);
 
-			vectorStore.add(documents);
+			vectorStore.add(this.documents);
 
 			SearchRequest query = SearchRequest.query("Great Depression").withTopK(50).withSimilarityThresholdAll();
 
@@ -342,24 +344,25 @@ class ElasticsearchVectorStoreIT {
 
 			List<Document> fullResult = vectorStore.similaritySearch(query);
 
-			List<Float> distances = fullResult.stream().map(doc -> (Float) doc.getMetadata().get("distance")).toList();
+			List<Double> scores = fullResult.stream().map(Document::getScore).toList();
 
-			assertThat(distances).hasSize(3);
+			assertThat(scores).hasSize(3);
 
-			float thresholdResult = (distances.get(0) + distances.get(1)) / 2;
+			double similarityThreshold = (scores.get(0) + scores.get(1)) / 2;
 
 			List<Document> results = vectorStore.similaritySearch(
-					SearchRequest.query("Great Depression").withTopK(50).withSimilarityThreshold(thresholdResult));
+					SearchRequest.query("Great Depression").withTopK(50).withSimilarityThreshold(similarityThreshold));
 
 			assertThat(results).hasSize(1);
 			Document resultDoc = results.get(0);
-			assertThat(resultDoc.getId()).isEqualTo(documents.get(2).getId());
+			assertThat(resultDoc.getId()).isEqualTo(this.documents.get(2).getId());
 			assertThat(resultDoc.getContent()).contains("The Great Depression (1929–1939) was an economic shock");
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
+			assertThat(resultDoc.getScore()).isGreaterThanOrEqualTo(similarityThreshold);
 
 			// Remove all documents from the store
-			vectorStore.delete(documents.stream().map(Document::getId).toList());
+			vectorStore.delete(this.documents.stream().map(Document::getId).toList());
 
 			Awaitility.await()
 				.until(() -> vectorStore.similaritySearch(

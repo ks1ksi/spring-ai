@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,24 +27,10 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.embedding.BatchingStrategy;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
-import org.springframework.ai.embedding.TokenCountBatchingStrategy;
-import org.springframework.ai.observation.conventions.VectorStoreProvider;
-import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
-import org.springframework.ai.vectorstore.filter.FilterExpressionConverter;
-import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
-import org.springframework.beans.factory.InitializingBean;
-import org.springframework.util.Assert;
-import org.springframework.util.CollectionUtils;
-
-import io.micrometer.observation.ObservationRegistry;
+import org.springframework.ai.document.DocumentMetadata;
 import redis.clients.jedis.JedisPooled;
 import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.json.Path2;
@@ -60,6 +46,21 @@ import redis.clients.jedis.search.schemafields.TagField;
 import redis.clients.jedis.search.schemafields.TextField;
 import redis.clients.jedis.search.schemafields.VectorField;
 import redis.clients.jedis.search.schemafields.VectorField.VectorAlgorithm;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.BatchingStrategy;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
+import org.springframework.ai.embedding.TokenCountBatchingStrategy;
+import org.springframework.ai.observation.conventions.VectorStoreProvider;
+import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
+import org.springframework.ai.vectorstore.filter.FilterExpressionConverter;
+import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
+import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
+import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.util.Assert;
+import org.springframework.util.CollectionUtils;
 
 /**
  * The RedisVectorStore is for managing and querying vector data in a Redis database. It
@@ -81,170 +82,12 @@ import redis.clients.jedis.search.schemafields.VectorField.VectorAlgorithm;
  * @author Eddú Meléndez
  * @author Thomas Vitale
  * @author Soby Chacko
+ * @author Jihoon Kim
  * @see VectorStore
  * @see RedisVectorStoreConfig
  * @see EmbeddingModel
  */
 public class RedisVectorStore extends AbstractObservationVectorStore implements InitializingBean {
-
-	public enum Algorithm {
-
-		FLAT, HSNW
-
-	}
-
-	public record MetadataField(String name, FieldType fieldType) {
-
-		public static MetadataField text(String name) {
-			return new MetadataField(name, FieldType.TEXT);
-		}
-
-		public static MetadataField numeric(String name) {
-			return new MetadataField(name, FieldType.NUMERIC);
-		}
-
-		public static MetadataField tag(String name) {
-			return new MetadataField(name, FieldType.TAG);
-		}
-
-	}
-
-	/**
-	 * Configuration for the Redis vector store.
-	 */
-	public static final class RedisVectorStoreConfig {
-
-		private final String indexName;
-
-		private final String prefix;
-
-		private final String contentFieldName;
-
-		private final String embeddingFieldName;
-
-		private final Algorithm vectorAlgorithm;
-
-		private final List<MetadataField> metadataFields;
-
-		private RedisVectorStoreConfig() {
-			this(builder());
-		}
-
-		private RedisVectorStoreConfig(Builder builder) {
-			this.indexName = builder.indexName;
-			this.prefix = builder.prefix;
-			this.contentFieldName = builder.contentFieldName;
-			this.embeddingFieldName = builder.embeddingFieldName;
-			this.vectorAlgorithm = builder.vectorAlgorithm;
-			this.metadataFields = builder.metadataFields;
-		}
-
-		/**
-		 * Start building a new configuration.
-		 * @return The entry point for creating a new configuration.
-		 */
-		public static Builder builder() {
-
-			return new Builder();
-		}
-
-		/**
-		 * {@return the default config}
-		 */
-		public static RedisVectorStoreConfig defaultConfig() {
-
-			return builder().build();
-		}
-
-		public static class Builder {
-
-			private String indexName = DEFAULT_INDEX_NAME;
-
-			private String prefix = DEFAULT_PREFIX;
-
-			private String contentFieldName = DEFAULT_CONTENT_FIELD_NAME;
-
-			private String embeddingFieldName = DEFAULT_EMBEDDING_FIELD_NAME;
-
-			private Algorithm vectorAlgorithm = DEFAULT_VECTOR_ALGORITHM;
-
-			private List<MetadataField> metadataFields = new ArrayList<>();
-
-			private Builder() {
-			}
-
-			/**
-			 * Configures the Redis index name to use.
-			 * @param name the index name to use
-			 * @return this builder
-			 */
-			public Builder withIndexName(String name) {
-				this.indexName = name;
-				return this;
-			}
-
-			/**
-			 * Configures the Redis key prefix to use (default: "embedding:").
-			 * @param prefix the prefix to use
-			 * @return this builder
-			 */
-			public Builder withPrefix(String prefix) {
-				this.prefix = prefix;
-				return this;
-			}
-
-			/**
-			 * Configures the Redis content field name to use.
-			 * @param name the content field name to use
-			 * @return this builder
-			 */
-			public Builder withContentFieldName(String name) {
-				this.contentFieldName = name;
-				return this;
-			}
-
-			/**
-			 * Configures the Redis embedding field name to use.
-			 * @param name the embedding field name to use
-			 * @return this builder
-			 */
-			public Builder withEmbeddingFieldName(String name) {
-				this.embeddingFieldName = name;
-				return this;
-			}
-
-			/**
-			 * Configures the Redis vector algorithmto use.
-			 * @param algorithm the vector algorithm to use
-			 * @return this builder
-			 */
-			public Builder withVectorAlgorithm(Algorithm algorithm) {
-				this.vectorAlgorithm = algorithm;
-				return this;
-			}
-
-			public Builder withMetadataFields(MetadataField... fields) {
-				return withMetadataFields(Arrays.asList(fields));
-			}
-
-			public Builder withMetadataFields(List<MetadataField> fields) {
-				this.metadataFields = fields;
-				return this;
-			}
-
-			/**
-			 * {@return the immutable configuration}
-			 */
-			public RedisVectorStoreConfig build() {
-
-				return new RedisVectorStoreConfig(this);
-			}
-
-		}
-
-	}
-
-	private final boolean initializeSchema;
 
 	public static final String DEFAULT_INDEX_NAME = "spring-ai-index";
 
@@ -256,6 +99,8 @@ public class RedisVectorStore extends AbstractObservationVectorStore implements 
 
 	public static final Algorithm DEFAULT_VECTOR_ALGORITHM = Algorithm.HSNW;
 
+	public static final String DISTANCE_FIELD_NAME = "vector_score";
+
 	private static final String QUERY_FORMAT = "%s=>[KNN %s @%s $%s AS %s]";
 
 	private static final Path2 JSON_SET_PATH = Path2.of("$");
@@ -266,15 +111,15 @@ public class RedisVectorStore extends AbstractObservationVectorStore implements 
 
 	private static final Predicate<Object> RESPONSE_OK = Predicate.isEqual("OK");
 
-	private static final Predicate<Object> RESPONSE_DEL_OK = Predicate.isEqual(1l);
+	private static final Predicate<Object> RESPONSE_DEL_OK = Predicate.isEqual(1L);
 
 	private static final String VECTOR_TYPE_FLOAT32 = "FLOAT32";
 
 	private static final String EMBEDDING_PARAM_NAME = "BLOB";
 
-	public static final String DISTANCE_FIELD_NAME = "vector_score";
-
 	private static final String DEFAULT_DISTANCE_METRIC = "COSINE";
+
+	private final boolean initializeSchema;
 
 	private final JedisPooled jedis;
 
@@ -282,9 +127,9 @@ public class RedisVectorStore extends AbstractObservationVectorStore implements 
 
 	private final RedisVectorStoreConfig config;
 
-	private FilterExpressionConverter filterExpressionConverter;
-
 	private final BatchingStrategy batchingStrategy;
+
+	private FilterExpressionConverter filterExpressionConverter;
 
 	public RedisVectorStore(RedisVectorStoreConfig config, EmbeddingModel embeddingModel, JedisPooled jedis,
 			boolean initializeSchema) {
@@ -396,14 +241,21 @@ public class RedisVectorStore extends AbstractObservationVectorStore implements 
 
 	private Document toDocument(redis.clients.jedis.search.Document doc) {
 		var id = doc.getId().substring(this.config.prefix.length());
-		var content = doc.hasProperty(this.config.contentFieldName) ? doc.getString(this.config.contentFieldName)
-				: null;
+		var content = doc.hasProperty(this.config.contentFieldName) ? doc.getString(this.config.contentFieldName) : "";
 		Map<String, Object> metadata = this.config.metadataFields.stream()
 			.map(MetadataField::name)
 			.filter(doc::hasProperty)
 			.collect(Collectors.toMap(Function.identity(), doc::getString));
+		// TODO: this seems wrong. The key is named "vector_store", but the value is the
+		// distance. Can we remove this after standardizing the metadata?
 		metadata.put(DISTANCE_FIELD_NAME, 1 - similarityScore(doc));
-		return new Document(id, content, metadata);
+		metadata.put(DocumentMetadata.DISTANCE.value(), 1 - similarityScore(doc));
+		return Document.builder()
+			.id(id)
+			.content(content)
+			.metadata(metadata)
+			.score((double) similarityScore(doc))
+			.build();
 	}
 
 	private float similarityScore(redis.clients.jedis.search.Document doc) {
@@ -461,21 +313,17 @@ public class RedisVectorStore extends AbstractObservationVectorStore implements 
 
 	private SchemaField schemaField(MetadataField field) {
 		String fieldName = jsonPath(field.name);
-		switch (field.fieldType) {
-			case NUMERIC:
-				return NumericField.of(fieldName).as(field.name);
-			case TAG:
-				return TagField.of(fieldName).as(field.name);
-			case TEXT:
-				return TextField.of(fieldName).as(field.name);
-			default:
-				throw new IllegalArgumentException(
-						MessageFormat.format("Field {0} has unsupported type {1}", field.name, field.fieldType));
-		}
+		return switch (field.fieldType) {
+			case NUMERIC -> NumericField.of(fieldName).as(field.name);
+			case TAG -> TagField.of(fieldName).as(field.name);
+			case TEXT -> TextField.of(fieldName).as(field.name);
+			default -> throw new IllegalArgumentException(
+					MessageFormat.format("Field {0} has unsupported type {1}", field.name, field.fieldType));
+		};
 	}
 
 	private VectorAlgorithm vectorAlgorithm() {
-		if (config.vectorAlgorithm == Algorithm.HSNW) {
+		if (this.config.vectorAlgorithm == Algorithm.HSNW) {
 			return VectorAlgorithm.HNSW;
 		}
 		return VectorAlgorithm.FLAT;
@@ -492,8 +340,164 @@ public class RedisVectorStore extends AbstractObservationVectorStore implements 
 			.withCollectionName(this.config.indexName)
 			.withDimensions(this.embeddingModel.dimensions())
 			.withFieldName(this.config.embeddingFieldName)
-			.withSimilarityMetric(
-					"COSINE".equals(DEFAULT_DISTANCE_METRIC) ? VectorStoreSimilarityMetric.COSINE.value() : "");
+			.withSimilarityMetric(VectorStoreSimilarityMetric.COSINE.value());
+
+	}
+
+	public enum Algorithm {
+
+		FLAT, HSNW
+
+	}
+
+	public record MetadataField(String name, FieldType fieldType) {
+
+		public static MetadataField text(String name) {
+			return new MetadataField(name, FieldType.TEXT);
+		}
+
+		public static MetadataField numeric(String name) {
+			return new MetadataField(name, FieldType.NUMERIC);
+		}
+
+		public static MetadataField tag(String name) {
+			return new MetadataField(name, FieldType.TAG);
+		}
+
+	}
+
+	/**
+	 * Configuration for the Redis vector store.
+	 */
+	public static final class RedisVectorStoreConfig {
+
+		private final String indexName;
+
+		private final String prefix;
+
+		private final String contentFieldName;
+
+		private final String embeddingFieldName;
+
+		private final Algorithm vectorAlgorithm;
+
+		private final List<MetadataField> metadataFields;
+
+		private RedisVectorStoreConfig() {
+			this(builder());
+		}
+
+		private RedisVectorStoreConfig(Builder builder) {
+			this.indexName = builder.indexName;
+			this.prefix = builder.prefix;
+			this.contentFieldName = builder.contentFieldName;
+			this.embeddingFieldName = builder.embeddingFieldName;
+			this.vectorAlgorithm = builder.vectorAlgorithm;
+			this.metadataFields = builder.metadataFields;
+		}
+
+		/**
+		 * Start building a new configuration.
+		 * @return The entry point for creating a new configuration.
+		 */
+		public static Builder builder() {
+
+			return new Builder();
+		}
+
+		/**
+		 * {@return the default config}
+		 */
+		public static RedisVectorStoreConfig defaultConfig() {
+
+			return builder().build();
+		}
+
+		public static final class Builder {
+
+			private String indexName = DEFAULT_INDEX_NAME;
+
+			private String prefix = DEFAULT_PREFIX;
+
+			private String contentFieldName = DEFAULT_CONTENT_FIELD_NAME;
+
+			private String embeddingFieldName = DEFAULT_EMBEDDING_FIELD_NAME;
+
+			private Algorithm vectorAlgorithm = DEFAULT_VECTOR_ALGORITHM;
+
+			private List<MetadataField> metadataFields = new ArrayList<>();
+
+			private Builder() {
+			}
+
+			/**
+			 * Configures the Redis index name to use.
+			 * @param name the index name to use
+			 * @return this builder
+			 */
+			public Builder withIndexName(String name) {
+				this.indexName = name;
+				return this;
+			}
+
+			/**
+			 * Configures the Redis key prefix to use (default: "embedding:").
+			 * @param prefix the prefix to use
+			 * @return this builder
+			 */
+			public Builder withPrefix(String prefix) {
+				this.prefix = prefix;
+				return this;
+			}
+
+			/**
+			 * Configures the Redis content field name to use.
+			 * @param name the content field name to use
+			 * @return this builder
+			 */
+			public Builder withContentFieldName(String name) {
+				this.contentFieldName = name;
+				return this;
+			}
+
+			/**
+			 * Configures the Redis embedding field name to use.
+			 * @param name the embedding field name to use
+			 * @return this builder
+			 */
+			public Builder withEmbeddingFieldName(String name) {
+				this.embeddingFieldName = name;
+				return this;
+			}
+
+			/**
+			 * Configures the Redis vector algorithm to use.
+			 * @param algorithm the vector algorithm to use
+			 * @return this builder
+			 */
+			public Builder withVectorAlgorithm(Algorithm algorithm) {
+				this.vectorAlgorithm = algorithm;
+				return this;
+			}
+
+			public Builder withMetadataFields(MetadataField... fields) {
+				return withMetadataFields(Arrays.asList(fields));
+			}
+
+			public Builder withMetadataFields(List<MetadataField> fields) {
+				this.metadataFields = fields;
+				return this;
+			}
+
+			/**
+			 * {@return the immutable configuration}
+			 */
+			public RedisVectorStoreConfig build() {
+
+				return new RedisVectorStoreConfig(this);
+			}
+
+		}
 
 	}
 

@@ -1,54 +1,103 @@
+/*
+ * Copyright 2023-2024 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.springframework.ai.ollama;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.ai.ollama.api.OllamaApi;
+import java.time.Duration;
+
+import org.junit.jupiter.api.AfterAll;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.ollama.OllamaContainer;
 
-public class BaseOllamaIT {
+import org.springframework.ai.ollama.api.OllamaApi;
+import org.springframework.ai.ollama.management.ModelManagementOptions;
+import org.springframework.ai.ollama.management.OllamaModelManager;
+import org.springframework.ai.ollama.management.PullModelStrategy;
+import org.springframework.util.Assert;
 
-	private static final Logger logger = LoggerFactory.getLogger(BaseOllamaIT.class);
+@Testcontainers
+public abstract class BaseOllamaIT {
 
-	// Toggle for running tests locally on native Ollama for a faster feedback loop.
-	private static final boolean useTestcontainers = true;
+	private static final String OLLAMA_LOCAL_URL = "http://localhost:11434";
 
-	public static final OllamaContainer ollamaContainer;
+	private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(10);
 
-	static {
-		ollamaContainer = new OllamaContainer(OllamaImage.DEFAULT_IMAGE).withReuse(true);
-		ollamaContainer.start();
+	private static final int DEFAULT_MAX_RETRIES = 2;
+
+	// Environment variable to control whether to create a new container or use existing
+	// Ollama instance
+	private static final boolean SKIP_CONTAINER_CREATION = Boolean
+		.parseBoolean(System.getenv().getOrDefault("OLLAMA_WITH_REUSE", "false"));
+
+	private static OllamaContainer ollamaContainer;
+
+	private static final ThreadLocal<OllamaApi> ollamaApi = new ThreadLocal<>();
+
+	/**
+	 * Initialize the Ollama container and API with the specified model. This method
+	 * should be called from @BeforeAll in subclasses.
+	 * @param model the Ollama model to initialize (must not be null or empty)
+	 * @return configured OllamaApi instance
+	 * @throws IllegalArgumentException if model is null or empty
+	 */
+	protected static OllamaApi initializeOllama(final String model) {
+		Assert.hasText(model, "Model name must be provided");
+
+		if (!SKIP_CONTAINER_CREATION) {
+			ollamaContainer = new OllamaContainer(OllamaImage.DEFAULT_IMAGE).withReuse(true);
+			ollamaContainer.start();
+		}
+
+		final OllamaApi api = buildOllamaApiWithModel(model);
+		ollamaApi.set(api);
+		return api;
 	}
 
 	/**
-	 * Change the return value to false in order to run multiple Ollama IT tests locally
-	 * reusing the same container image.
-	 *
-	 * Also, add the entry
-	 *
-	 * testcontainers.reuse.enable=true
-	 *
-	 * to the file ".testcontainers.properties" located in your home directory
+	 * Get the initialized OllamaApi instance.
+	 * @return the OllamaApi instance
+	 * @throws IllegalStateException if called before initialization
 	 */
-	public static boolean isDisabled() {
-		return false;
+	protected static OllamaApi getOllamaApi() {
+		OllamaApi api = ollamaApi.get();
+		Assert.state(api != null, "OllamaApi not initialized. Call initializeOllama first.");
+		return api;
 	}
 
-	public static OllamaApi buildOllamaApiWithModel(String model) {
-		var baseUrl = "http://localhost:11434";
-		if (useTestcontainers) {
-			baseUrl = ollamaContainer.getEndpoint();
+	@AfterAll
+	public static void tearDown() {
+		if (ollamaContainer != null) {
+			ollamaContainer.stop();
 		}
-		var ollamaApi = new OllamaApi(baseUrl);
-
-		ensureModelIsPresent(ollamaApi, model);
-
-		return ollamaApi;
 	}
 
-	public static void ensureModelIsPresent(OllamaApi ollamaApi, String model) {
-		logger.info("Start pulling the '{}' model. The operation can take several minutes...", model);
-		ollamaApi.pullModel(new OllamaApi.PullModelRequest(model));
-		logger.info("Completed pulling the '{}' model", model);
+	private static OllamaApi buildOllamaApiWithModel(final String model) {
+		final String baseUrl = SKIP_CONTAINER_CREATION ? OLLAMA_LOCAL_URL : ollamaContainer.getEndpoint();
+		final OllamaApi api = new OllamaApi(baseUrl);
+		ensureModelIsPresent(api, model);
+		return api;
+	}
+
+	private static void ensureModelIsPresent(final OllamaApi ollamaApi, final String model) {
+		final var modelManagementOptions = ModelManagementOptions.builder()
+			.withMaxRetries(DEFAULT_MAX_RETRIES)
+			.withTimeout(DEFAULT_TIMEOUT)
+			.build();
+		final var ollamaModelManager = new OllamaModelManager(ollamaApi, modelManagementOptions);
+		ollamaModelManager.pullModel(model, PullModelStrategy.WHEN_MISSING);
 	}
 
 }

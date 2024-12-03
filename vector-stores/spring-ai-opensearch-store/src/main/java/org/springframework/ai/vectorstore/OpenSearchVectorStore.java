@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,14 @@
 
 package org.springframework.ai.vectorstore;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+import io.micrometer.observation.ObservationRegistry;
 import org.opensearch.client.json.JsonData;
 import org.opensearch.client.json.JsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -30,7 +38,9 @@ import org.opensearch.client.opensearch.indices.CreateIndexResponse;
 import org.opensearch.client.transport.endpoints.BooleanResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.ai.document.Document;
+import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.BatchingStrategy;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
@@ -46,16 +56,9 @@ import org.springframework.ai.vectorstore.observation.VectorStoreObservationConv
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
 
-import io.micrometer.observation.ObservationRegistry;
-
-import java.io.IOException;
-import java.io.StringReader;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Collectors;
-
 /**
+ * An ObservationVectorStore implementation that stores vectors in OpenSearch.
+ *
  * @author Jemin Huh
  * @author Soby Chacko
  * @author Christian Tzolov
@@ -67,20 +70,20 @@ public class OpenSearchVectorStore extends AbstractObservationVectorStore implem
 
 	public static final String COSINE_SIMILARITY_FUNCTION = "cosinesimil";
 
-	private static final Logger logger = LoggerFactory.getLogger(OpenSearchVectorStore.class);
-
 	public static final String DEFAULT_INDEX_NAME = "spring-ai-document-index";
 
-	public static final String DEFAULT_MAPPING_EMBEDDING_TYPE_KNN_VECTOR_DIMENSION_1536 = """
+	public static final String DEFAULT_MAPPING_EMBEDDING_TYPE_KNN_VECTOR_DIMENSION = """
 			{
-			   "properties":{
-			      "embedding":{
-			         "type":"knn_vector",
-			         "dimension":1536
-			      }
-			   }
+				"properties":{
+					"embedding":{
+						"type":"knn_vector",
+						"dimension":%s
+					}
+				}
 			}
 			""";
+
+	private static final Logger logger = LoggerFactory.getLogger(OpenSearchVectorStore.class);
 
 	private final EmbeddingModel embeddingModel;
 
@@ -92,16 +95,15 @@ public class OpenSearchVectorStore extends AbstractObservationVectorStore implem
 
 	private final String mappingJson;
 
-	private String similarityFunction;
-
 	private final boolean initializeSchema;
 
 	private final BatchingStrategy batchingStrategy;
 
+	private String similarityFunction;
+
 	public OpenSearchVectorStore(OpenSearchClient openSearchClient, EmbeddingModel embeddingModel,
 			boolean initializeSchema) {
-		this(openSearchClient, embeddingModel, DEFAULT_MAPPING_EMBEDDING_TYPE_KNN_VECTOR_DIMENSION_1536,
-				initializeSchema);
+		this(openSearchClient, embeddingModel, DEFAULT_MAPPING_EMBEDDING_TYPE_KNN_VECTOR_DIMENSION, initializeSchema);
 	}
 
 	public OpenSearchVectorStore(OpenSearchClient openSearchClient, EmbeddingModel embeddingModel, String mappingJson,
@@ -154,8 +156,9 @@ public class OpenSearchVectorStore extends AbstractObservationVectorStore implem
 	@Override
 	public Optional<Boolean> doDelete(List<String> idList) {
 		BulkRequest.Builder bulkRequestBuilder = new BulkRequest.Builder();
-		for (String id : idList)
+		for (String id : idList) {
 			bulkRequestBuilder.operations(op -> op.delete(idx -> idx.index(this.index).id(id)));
+		}
 		return Optional.of(bulkRequest(bulkRequestBuilder.build()).errors());
 	}
 
@@ -229,8 +232,12 @@ public class OpenSearchVectorStore extends AbstractObservationVectorStore implem
 
 	private Document toDocument(Hit<Document> hit) {
 		Document document = hit.source();
-		document.getMetadata().put("distance", 1 - hit.score().floatValue());
-		return document;
+		Document.Builder documentBuilder = document.mutate();
+		if (hit.score() != null) {
+			documentBuilder.metadata(DocumentMetadata.DISTANCE.value(), 1 - hit.score().floatValue());
+			documentBuilder.score(hit.score());
+		}
+		return documentBuilder.build();
 	}
 
 	public boolean exists(String targetIndex) {
@@ -245,7 +252,7 @@ public class OpenSearchVectorStore extends AbstractObservationVectorStore implem
 	}
 
 	private CreateIndexResponse createIndexMapping(String index, String mappingJson) {
-		JsonpMapper jsonpMapper = openSearchClient._transport().jsonpMapper();
+		JsonpMapper jsonpMapper = this.openSearchClient._transport().jsonpMapper();
 		try {
 			return this.openSearchClient.indices()
 				.create(new CreateIndexRequest.Builder().index(index)
@@ -262,7 +269,7 @@ public class OpenSearchVectorStore extends AbstractObservationVectorStore implem
 	@Override
 	public void afterPropertiesSet() {
 		if (this.initializeSchema && !exists(this.index)) {
-			createIndexMapping(this.index, this.mappingJson);
+			createIndexMapping(this.index, String.format(this.mappingJson, this.embeddingModel.dimensions()));
 		}
 	}
 

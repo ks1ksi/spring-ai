@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,15 +16,16 @@
 
 package org.springframework.ai.vertexai.gemini;
 
+import java.io.IOException;
+import java.util.List;
+
 import com.google.cloud.vertexai.VertexAI;
 import com.google.cloud.vertexai.api.GenerateContentResponse;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
-import org.springframework.ai.model.function.FunctionCallback;
-import org.springframework.ai.model.function.FunctionCallbackContext;
-import org.springframework.retry.support.RetryTemplate;
 
-import java.io.IOException;
-import java.util.List;
+import org.springframework.ai.model.function.FunctionCallback;
+import org.springframework.ai.model.function.FunctionCallbackResolver;
+import org.springframework.retry.support.RetryTemplate;
 
 /**
  * @author Mark Pollack
@@ -34,16 +35,16 @@ public class TestVertexAiGeminiChatModel extends VertexAiGeminiChatModel {
 	private GenerativeModel mockGenerativeModel;
 
 	public TestVertexAiGeminiChatModel(VertexAI vertexAI, VertexAiGeminiChatOptions options,
-			FunctionCallbackContext functionCallbackContext, List<FunctionCallback> toolFunctionCallbacks,
+			FunctionCallbackResolver functionCallbackResolver, List<FunctionCallback> toolFunctionCallbacks,
 			RetryTemplate retryTemplate) {
-		super(vertexAI, options, functionCallbackContext, toolFunctionCallbacks, retryTemplate);
+		super(vertexAI, options, functionCallbackResolver, toolFunctionCallbacks, retryTemplate);
 	}
 
 	@Override
 	GenerateContentResponse getContentResponse(GeminiRequest request) {
-		if (mockGenerativeModel != null) {
+		if (this.mockGenerativeModel != null) {
 			try {
-				return mockGenerativeModel.generateContent(request.contents());
+				return this.mockGenerativeModel.generateContent(request.contents());
 			}
 			catch (IOException e) {
 				// Should not be thrown by testing class

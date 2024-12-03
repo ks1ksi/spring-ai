@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
 
 import java.util.Collections;
@@ -27,15 +28,16 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
-import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
+import org.springframework.ai.document.DocumentMetadata;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
+import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -57,6 +59,9 @@ class Neo4jVectorStoreIT {
 	@Container
 	static Neo4jContainer<?> neo4jContainer = new Neo4jContainer<>(Neo4jImage.DEFAULT_IMAGE).withRandomPassword();
 
+	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+		.withUserConfiguration(TestApplication.class);
+
 	List<Document> documents = List.of(
 			new Document("Spring AI rocks!! Spring AI rocks!! Spring AI rocks!! Spring AI rocks!! Spring AI rocks!!",
 					Collections.singletonMap("meta1", "meta1")),
@@ -64,9 +69,6 @@ class Neo4jVectorStoreIT {
 			new Document(
 					"Great Depression Great Depression Great Depression Great Depression Great Depression Great Depression",
 					Collections.singletonMap("meta2", "meta2")));
-
-	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-		.withUserConfiguration(TestApplication.class);
 
 	@BeforeEach
 	void cleanDatabase() {
@@ -90,7 +92,7 @@ class Neo4jVectorStoreIT {
 			assertThat(resultDoc.getContent()).isEqualTo(
 					"Great Depression Great Depression Great Depression Great Depression Great Depression Great Depression");
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			// Remove all documents from the store
 			vectorStore.delete(this.documents.stream().map(Document::getId).toList());
@@ -202,7 +204,7 @@ class Neo4jVectorStoreIT {
 			assertThat(resultDoc.getId()).isEqualTo(document.getId());
 			assertThat(resultDoc.getContent()).isEqualTo("Spring AI rocks!!");
 			assertThat(resultDoc.getMetadata()).containsKey("meta1");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			Document sameIdDocument = new Document(document.getId(),
 					"The World is Big and Salvation Lurks Around the Corner",
@@ -217,7 +219,7 @@ class Neo4jVectorStoreIT {
 			assertThat(resultDoc.getId()).isEqualTo(document.getId());
 			assertThat(resultDoc.getContent()).isEqualTo("The World is Big and Salvation Lurks Around the Corner");
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 		});
 	}
@@ -234,14 +236,14 @@ class Neo4jVectorStoreIT {
 			List<Document> fullResult = vectorStore
 				.similaritySearch(SearchRequest.query("Great").withTopK(5).withSimilarityThresholdAll());
 
-			List<Float> distances = fullResult.stream().map(doc -> (Float) doc.getMetadata().get("distance")).toList();
+			List<Double> scores = fullResult.stream().map(Document::getScore).toList();
 
-			assertThat(distances).hasSize(3);
+			assertThat(scores).hasSize(3);
 
-			float threshold = (distances.get(0) + distances.get(1)) / 2;
+			double similarityThreshold = (scores.get(0) + scores.get(1)) / 2;
 
-			List<Document> results = vectorStore
-				.similaritySearch(SearchRequest.query("Great").withTopK(5).withSimilarityThreshold(1 - threshold));
+			List<Document> results = vectorStore.similaritySearch(
+					SearchRequest.query("Great").withTopK(5).withSimilarityThreshold(similarityThreshold));
 
 			assertThat(results).hasSize(1);
 			Document resultDoc = results.get(0);
@@ -249,39 +251,35 @@ class Neo4jVectorStoreIT {
 			assertThat(resultDoc.getContent()).isEqualTo(
 					"Great Depression Great Depression Great Depression Great Depression Great Depression Great Depression");
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
-			assertThat(resultDoc.getMetadata()).containsKey("distance");
-
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
+			assertThat(resultDoc.getScore()).isGreaterThanOrEqualTo(similarityThreshold);
 		});
 	}
 
 	@Test
 	void ensureVectorIndexGetsCreated() {
-		this.contextRunner.run(context -> {
-			assertThat(context.getBean(Driver.class)
-				.executableQuery(
-						"SHOW indexes yield name, type WHERE name = 'spring-ai-document-index' AND type = 'VECTOR' return count(*) > 0")
-				.execute()
-				.records()
-				.get(0) // get first record
-				.get(0)
-				.asBoolean()) // get returned result
-				.isTrue();
-		});
+		this.contextRunner.run(context -> assertThat(context.getBean(Driver.class)
+			.executableQuery(
+					"SHOW indexes yield name, type WHERE name = 'spring-ai-document-index' AND type = 'VECTOR' return count(*) > 0")
+			.execute()
+			.records()
+			.get(0) // get first record
+			.get(0)
+			.asBoolean()) // get returned result
+			.isTrue());
 	}
 
 	@Test
 	void ensureIdIndexGetsCreated() {
-		this.contextRunner.run(context -> {
-			assertThat(context.getBean(Driver.class)
-				.executableQuery(
-						"SHOW indexes yield labelsOrTypes, properties, type WHERE any(x in labelsOrTypes where x = 'Document')  AND any(x in properties where x = 'id') AND type = 'RANGE' return count(*) > 0")
-				.execute()
-				.records()
-				.get(0) // get first record
-				.get(0)
-				.asBoolean()) // get returned result
-				.isTrue();
-		});
+		this.contextRunner.run(context -> assertThat(context.getBean(Driver.class)
+			.executableQuery(
+					"SHOW indexes yield labelsOrTypes, properties, type WHERE any(x in labelsOrTypes where x = 'Document')  AND any(x in properties where x = 'id') AND type = 'RANGE' return count(*) > 0")
+			.execute()
+			.records()
+			.get(0) // get first record
+			.get(0)
+			.asBoolean()) // get returned result
+			.isTrue());
 	}
 
 	@SpringBootConfiguration

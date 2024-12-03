@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,17 @@
  */
 
 package org.springframework.ai.vectorstore;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.BoundStatementBuilder;
@@ -29,13 +40,12 @@ import com.datastax.oss.driver.api.querybuilder.delete.DeleteSelection;
 import com.datastax.oss.driver.api.querybuilder.insert.InsertInto;
 import com.datastax.oss.driver.api.querybuilder.insert.RegularInsert;
 import com.datastax.oss.driver.shaded.guava.common.base.Preconditions;
-
 import io.micrometer.observation.ObservationRegistry;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.ai.document.Document;
+import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.BatchingStrategy;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
@@ -49,17 +59,6 @@ import org.springframework.ai.vectorstore.observation.AbstractObservationVectorS
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext.Builder;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * The CassandraVectorStore is for managing and querying vector data in an Apache
@@ -108,18 +107,6 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class CassandraVectorStore extends AbstractObservationVectorStore implements AutoCloseable {
 
-	/**
-	 * Indexes are automatically created with COSINE. This can be changed manually via
-	 * cqlsh
-	 */
-	public enum Similarity {
-
-		COSINE, DOT_PRODUCT, EUCLIDEAN;
-
-	}
-
-	public static final String SIMILARITY_FIELD_NAME = "similarity_score";
-
 	public static final String DRIVER_PROFILE_UPDATES = "spring-ai-updates";
 
 	public static final String DRIVER_PROFILE_SEARCH = "spring-ai-search";
@@ -127,6 +114,10 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 	private static final String QUERY_FORMAT = "select %s,%s,%s%s from %s.%s ? order by %s ann of ? limit ?";
 
 	private static final Logger logger = LoggerFactory.getLogger(CassandraVectorStore.class);
+
+	private static Map<Similarity, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(Similarity.COSINE,
+			VectorStoreSimilarityMetric.COSINE, Similarity.EUCLIDEAN, VectorStoreSimilarityMetric.EUCLIDEAN,
+			Similarity.DOT_PRODUCT, VectorStoreSimilarityMetric.DOT);
 
 	private final CassandraVectorStoreConfig conf;
 
@@ -177,6 +168,15 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		this.batchingStrategy = batchingStrategy;
 	}
 
+	private static Float[] toFloatArray(float[] embedding) {
+		Float[] embeddingFloat = new Float[embedding.length];
+		int i = 0;
+		for (Float d : embedding) {
+			embeddingFloat[i++] = d.floatValue();
+		}
+		return embeddingFloat;
+	}
+
 	@Override
 	public void doAdd(List<Document> documents) {
 		var futures = new CompletableFuture[documents.size()];
@@ -200,7 +200,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 				for (var metadataColumn : this.conf.schema.metadataColumns()
 					.stream()
-					.filter((mc) -> d.getMetadata().containsKey(mc.name()))
+					.filter(mc -> d.getMetadata().containsKey(mc.name()))
 					.toList()) {
 
 					builder = builder.set(metadataColumn.name(), d.getMetadata().get(metadataColumn.name()),
@@ -251,14 +251,19 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 				break;
 			}
 			Map<String, Object> docFields = new HashMap<>();
-			docFields.put(SIMILARITY_FIELD_NAME, score);
+			docFields.put(DocumentMetadata.DISTANCE.value(), 1 - score);
 			for (var metadata : this.conf.schema.metadataColumns()) {
 				var value = row.get(metadata.name(), metadata.javaType());
 				if (null != value) {
 					docFields.put(metadata.name(), value);
 				}
 			}
-			Document doc = new Document(getDocumentId(row), row.getString(this.conf.schema.content()), docFields);
+			Document doc = Document.builder()
+				.id(getDocumentId(row))
+				.content(row.getString(this.conf.schema.content()))
+				.metadata(docFields)
+				.score((double) score)
+				.build();
 
 			if (this.conf.returnEmbeddings) {
 				doc.setEmbedding(EmbeddingUtils
@@ -275,7 +280,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 	}
 
 	void checkSchemaValid() {
-		this.conf.checkSchemaValid(embeddingModel.dimensions());
+		this.conf.checkSchemaValid(this.embeddingModel.dimensions());
 	}
 
 	private Similarity getIndexSimilarity(TableMetadata metadata) {
@@ -289,7 +294,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 	private PreparedStatement prepareDeleteStatement() {
 		Delete stmt = null;
-		DeleteSelection stmtStart = QueryBuilder.deleteFrom(conf.schema.keyspace(), conf.schema.table());
+		DeleteSelection stmtStart = QueryBuilder.deleteFrom(this.conf.schema.keyspace(), this.conf.schema.table());
 
 		for (var c : this.conf.schema.partitionKeys()) {
 			stmt = (null != stmt ? stmt : stmtStart).whereColumn(c.name()).isEqualTo(QueryBuilder.bindMarker(c.name()));
@@ -306,11 +311,11 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		// metadata fields that are not configured as metadata columns are not added
 		Set<String> fieldsThatAreColumns = new HashSet<>(this.conf.schema.metadataColumns()
 			.stream()
-			.map((mc) -> mc.name())
-			.filter((mc) -> metadataFields.contains(mc))
+			.map(mc -> mc.name())
+			.filter(mc -> metadataFields.contains(mc))
 			.toList());
 
-		return this.addStmts.computeIfAbsent(fieldsThatAreColumns, (fields) -> {
+		return this.addStmts.computeIfAbsent(fieldsThatAreColumns, fields -> {
 
 			RegularInsert stmt = null;
 			InsertInto stmtStart = QueryBuilder.insertInto(this.conf.schema.keyspace(), this.conf.schema.table());
@@ -344,7 +349,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 		String similarityFunction = new StringBuilder("similarity_").append(this.similarity.toString().toLowerCase())
 			.append('(')
-			.append(conf.schema.embedding())
+			.append(this.conf.schema.embedding())
 			.append(",?)")
 			.toString();
 
@@ -377,15 +382,6 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		return this.conf.primaryKeyTranslator.apply(primaryKeyValues);
 	}
 
-	private static Float[] toFloatArray(float[] embedding) {
-		Float[] embeddingFloat = new Float[embedding.length];
-		int i = 0;
-		for (Float d : embedding) {
-			embeddingFloat[i++] = d.floatValue();
-		}
-		return embeddingFloat;
-	}
-
 	@Override
 	public Builder createObservationContextBuilder(String operationName) {
 		return VectorStoreObservationContext.builder(VectorStoreProvider.CASSANDRA.value(), operationName)
@@ -395,15 +391,21 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 			.withSimilarityMetric(getSimilarityMetric());
 	}
 
-	private static Map<Similarity, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(Similarity.COSINE,
-			VectorStoreSimilarityMetric.COSINE, Similarity.EUCLIDEAN, VectorStoreSimilarityMetric.EUCLIDEAN,
-			Similarity.DOT_PRODUCT, VectorStoreSimilarityMetric.DOT);
-
 	private String getSimilarityMetric() {
 		if (!SIMILARITY_TYPE_MAPPING.containsKey(this.similarity)) {
 			return this.similarity.name();
 		}
 		return SIMILARITY_TYPE_MAPPING.get(this.similarity).value();
+	}
+
+	/**
+	 * Indexes are automatically created with COSINE. This can be changed manually via
+	 * cqlsh
+	 */
+	public enum Similarity {
+
+		COSINE, DOT_PRODUCT, EUCLIDEAN
+
 	}
 
 }

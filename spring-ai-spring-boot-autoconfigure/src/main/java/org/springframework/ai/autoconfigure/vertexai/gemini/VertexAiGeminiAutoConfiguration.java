@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,16 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.autoconfigure.vertexai.gemini;
 
 import java.io.IOException;
 import java.util.List;
 
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.vertexai.VertexAI;
+import io.micrometer.observation.ObservationRegistry;
+
 import org.springframework.ai.autoconfigure.retry.SpringAiRetryAutoConfiguration;
 import org.springframework.ai.chat.observation.ChatModelObservationConvention;
+import org.springframework.ai.model.function.DefaultFunctionCallbackResolver;
 import org.springframework.ai.model.function.FunctionCallback;
-import org.springframework.ai.model.function.FunctionCallbackContext;
-import org.springframework.ai.model.function.FunctionCallbackContext.SchemaType;
+import org.springframework.ai.model.function.FunctionCallback.SchemaType;
+import org.springframework.ai.model.function.FunctionCallbackResolver;
 import org.springframework.ai.vertexai.gemini.VertexAiGeminiChatModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -37,11 +43,6 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
-
-import com.google.auth.oauth2.GoogleCredentials;
-import com.google.cloud.vertexai.VertexAI;
-
-import io.micrometer.observation.ObservationRegistry;
 
 /**
  * Auto-configuration for Vertex AI Gemini Chat.
@@ -94,21 +95,21 @@ public class VertexAiGeminiAutoConfiguration {
 			ObjectProvider<ObservationRegistry> observationRegistry,
 			ObjectProvider<ChatModelObservationConvention> observationConvention) {
 
-		FunctionCallbackContext functionCallbackContext = springAiFunctionManager(context);
+		FunctionCallbackResolver functionCallbackResolver = springAiFunctionManager(context);
 
 		VertexAiGeminiChatModel chatModel = new VertexAiGeminiChatModel(vertexAi, chatProperties.getOptions(),
-				functionCallbackContext, toolFunctionCallbacks, retryTemplate,
+				functionCallbackResolver, toolFunctionCallbacks, retryTemplate,
 				observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP));
 		observationConvention.ifAvailable(chatModel::setObservationConvention);
 		return chatModel;
 	}
 
 	/**
-	 * Because of the OPEN_API_SCHEMA type, the FunctionCallbackContext instance must
+	 * Because of the OPEN_API_SCHEMA type, the FunctionCallbackResolver instance must
 	 * different from the other JSON schema types.
 	 */
-	private FunctionCallbackContext springAiFunctionManager(ApplicationContext context) {
-		FunctionCallbackContext manager = new FunctionCallbackContext();
+	private FunctionCallbackResolver springAiFunctionManager(ApplicationContext context) {
+		DefaultFunctionCallbackResolver manager = new DefaultFunctionCallbackResolver();
 		manager.setSchemaType(SchemaType.OPEN_API_SCHEMA);
 		manager.setApplicationContext(context);
 		return manager;

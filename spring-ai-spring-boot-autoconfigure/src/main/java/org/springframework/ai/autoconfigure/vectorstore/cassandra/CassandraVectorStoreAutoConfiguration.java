@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,6 @@ import java.time.Duration;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
-
 import io.micrometer.observation.ObservationRegistry;
 
 import org.springframework.ai.embedding.BatchingStrategy;
@@ -39,6 +38,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 /**
+ * {@link AutoConfiguration Auto-configuration} for Cassandra Vector Store.
+ *
  * @author Mick Semb Wever
  * @author Christian Tzolov
  * @author Soby Chacko
@@ -87,7 +88,7 @@ public class CassandraVectorStoreAutoConfiguration {
 	public DriverConfigLoaderBuilderCustomizer driverConfigLoaderBuilderCustomizer() {
 		// this replaces spring-ai-cassandra-*.jar!application.conf
 		// as spring-boot autoconfigure will not resolve the default driver configs
-		return (builder) -> builder.startProfile(CassandraVectorStore.DRIVER_PROFILE_UPDATES)
+		return builder -> builder.startProfile(CassandraVectorStore.DRIVER_PROFILE_UPDATES)
 			.withString(DefaultDriverOption.REQUEST_CONSISTENCY, "LOCAL_QUORUM")
 			.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofSeconds(1))
 			.withBoolean(DefaultDriverOption.REQUEST_DEFAULT_IDEMPOTENCE, true)

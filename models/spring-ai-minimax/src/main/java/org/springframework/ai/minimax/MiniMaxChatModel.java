@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,13 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.minimax;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -49,29 +60,17 @@ import org.springframework.ai.minimax.api.MiniMaxApi.ChatCompletionMessage.ChatC
 import org.springframework.ai.minimax.api.MiniMaxApi.ChatCompletionMessage.Role;
 import org.springframework.ai.minimax.api.MiniMaxApi.ChatCompletionMessage.ToolCall;
 import org.springframework.ai.minimax.api.MiniMaxApi.ChatCompletionRequest;
-import org.springframework.ai.minimax.api.MiniMaxApi.FunctionTool;
 import org.springframework.ai.minimax.api.MiniMaxApiConstants;
 import org.springframework.ai.minimax.metadata.MiniMaxUsage;
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.ai.model.function.FunctionCallback;
-import org.springframework.ai.model.function.FunctionCallbackContext;
+import org.springframework.ai.model.function.FunctionCallbackResolver;
 import org.springframework.ai.model.function.FunctionCallingOptions;
 import org.springframework.ai.retry.RetryUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static org.springframework.ai.minimax.api.MiniMaxApiConstants.TOOL_CALL_FUNCTION_TYPE;
 
 /**
  * {@link ChatModel} and {@link StreamingChatModel} implementation for {@literal MiniMax}
@@ -90,14 +89,14 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 	private static final ChatModelObservationConvention DEFAULT_OBSERVATION_CONVENTION = new DefaultChatModelObservationConvention();
 
 	/**
-	 * The default options used for the chat completion requests.
-	 */
-	private final MiniMaxChatOptions defaultOptions;
-
-	/**
 	 * The retry template used to retry the MiniMax API calls.
 	 */
 	public final RetryTemplate retryTemplate;
+
+	/**
+	 * The default options used for the chat completion requests.
+	 */
+	private final MiniMaxChatOptions defaultOptions;
 
 	/**
 	 * Low-level access to the MiniMax API.
@@ -140,12 +139,13 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 	 * @param miniMaxApi The MiniMaxApi instance to be used for interacting with the
 	 * MiniMax Chat API.
 	 * @param options The MiniMaxChatOptions to configure the chat model.
-	 * @param functionCallbackContext The function callback context.
+	 * @param functionCallbackResolver The function callback resolver to resolve the
+	 * function by its name.
 	 * @param retryTemplate The retry template.
 	 */
 	public MiniMaxChatModel(MiniMaxApi miniMaxApi, MiniMaxChatOptions options,
-			FunctionCallbackContext functionCallbackContext, RetryTemplate retryTemplate) {
-		this(miniMaxApi, options, functionCallbackContext, List.of(), retryTemplate, ObservationRegistry.NOOP);
+			FunctionCallbackResolver functionCallbackResolver, RetryTemplate retryTemplate) {
+		this(miniMaxApi, options, functionCallbackResolver, List.of(), retryTemplate, ObservationRegistry.NOOP);
 	}
 
 	/**
@@ -153,15 +153,16 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 	 * @param miniMaxApi The MiniMaxApi instance to be used for interacting with the
 	 * MiniMax Chat API.
 	 * @param options The MiniMaxChatOptions to configure the chat model.
-	 * @param functionCallbackContext The function callback context.
+	 * @param functionCallbackResolver The function callback resolver to resolve the
+	 * function by its name.
 	 * @param toolFunctionCallbacks The tool function callbacks.
 	 * @param retryTemplate The retry template.
 	 * @param observationRegistry The ObservationRegistry used for instrumentation.
 	 */
 	public MiniMaxChatModel(MiniMaxApi miniMaxApi, MiniMaxChatOptions options,
-			FunctionCallbackContext functionCallbackContext, List<FunctionCallback> toolFunctionCallbacks,
+			FunctionCallbackResolver functionCallbackResolver, List<FunctionCallback> toolFunctionCallbacks,
 			RetryTemplate retryTemplate, ObservationRegistry observationRegistry) {
-		super(functionCallbackContext, options, toolFunctionCallbacks);
+		super(functionCallbackResolver, options, toolFunctionCallbacks);
 		Assert.notNull(miniMaxApi, "MiniMaxApi must not be null");
 		Assert.notNull(options, "Options must not be null");
 		Assert.notNull(retryTemplate, "RetryTemplate must not be null");
@@ -172,6 +173,40 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 		this.defaultOptions = options;
 		this.retryTemplate = retryTemplate;
 		this.observationRegistry = observationRegistry;
+	}
+
+	private static Generation buildGeneration(Choice choice, Map<String, Object> metadata) {
+		List<AssistantMessage.ToolCall> toolCalls = choice.message().toolCalls() == null ? List.of()
+				: choice.message()
+					.toolCalls()
+					.stream()
+					// the MiniMax's stream function calls response are really odd
+					// occasionally, tool call might get split.
+					// for example, id empty means the previous tool call is not finished,
+					// the toolCalls:
+					// [{id:'1',function:{name:'a'}},{id:'',function:{arguments:'[1]'}}]
+					// these need to be merged into [{id:'1', name:'a', arguments:'[1]'}]
+					// it worked before, maybe the model provider made some adjustments
+					.reduce(new ArrayList<>(), (acc, current) -> {
+						if (!acc.isEmpty() && current.id().isEmpty()) {
+							AssistantMessage.ToolCall prev = acc.get(acc.size() - 1);
+							acc.set(acc.size() - 1, new AssistantMessage.ToolCall(prev.id(), prev.type(), prev.name(),
+									current.function().arguments()));
+						}
+						else {
+							AssistantMessage.ToolCall currentToolCall = new AssistantMessage.ToolCall(current.id(),
+									current.type(), current.function().name(), current.function().arguments());
+							acc.add(currentToolCall);
+						}
+						return acc;
+					}, (acc1, acc2) -> {
+						acc1.addAll(acc2);
+						return acc1;
+					});
+		var assistantMessage = new AssistantMessage(choice.message().content(), metadata, toolCalls);
+		String finishReason = (choice.finishReason() != null ? choice.finishReason().name() : "");
+		var generationMetadata = ChatGenerationMetadata.builder().finishReason(finishReason).build();
+		return new Generation(assistantMessage, generationMetadata);
 	}
 
 	@Override
@@ -210,9 +245,10 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 			// @formatter:off
 						// if the choice is a web search tool call, return last message of choice.messages
 						ChatCompletionMessage message = null;
-						if(choice.message() != null) {
+						if (choice.message() != null) {
 							message = choice.message();
-						} else if(!CollectionUtils.isEmpty(choice.messages())){
+						}
+						else if (!CollectionUtils.isEmpty(choice.messages())) {
 							// the MiniMax web search messages result is ['user message','assistant tool call', 'tool call', 'assistant message']
 							// so the last message is the assistant message
 							message = choice.messages().get(choice.messages().size() - 1);
@@ -292,7 +328,8 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 								return buildGeneration(choice, metadata);
 							}).toList();
 							return new ChatResponse(generations, from(chatCompletion2));
-						} catch (Exception e) {
+					}
+					catch (Exception e) {
 							logger.error("Error processing chat completion", e);
 							return new ChatResponse(List.of());
 						}
@@ -332,7 +369,8 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 		return generation.getOutput()
 			.getToolCalls()
 			.stream()
-			.anyMatch(toolCall -> TOOL_CALL_FUNCTION_TYPE.equals(toolCall.type()));
+			.anyMatch(toolCall -> org.springframework.ai.minimax.api.MiniMaxApiConstants.TOOL_CALL_FUNCTION_TYPE
+				.equals(toolCall.type()));
 	}
 
 	private ChatOptions buildRequestOptions(ChatCompletionRequest request) {
@@ -372,41 +410,7 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 
 		var assistantMessage = new AssistantMessage(message.content(), metadata, toolCalls);
 		String finishReason = (completionFinishReason != null ? completionFinishReason.name() : "");
-		var generationMetadata = ChatGenerationMetadata.from(finishReason, null);
-		return new Generation(assistantMessage, generationMetadata);
-	}
-
-	private static Generation buildGeneration(Choice choice, Map<String, Object> metadata) {
-		List<AssistantMessage.ToolCall> toolCalls = choice.message().toolCalls() == null ? List.of()
-				: choice.message()
-					.toolCalls()
-					.stream()
-					// the MiniMax's stream function calls response are really odd
-					// occasionally, tool call might get split.
-					// for example, id empty means the previous tool call is not finished,
-					// the toolCalls:
-					// [{id:'1',function:{name:'a'}},{id:'',function:{arguments:'[1]'}}]
-					// these need to be merged into [{id:'1', name:'a', arguments:'[1]'}]
-					// it worked before, maybe the model provider made some adjustments
-					.reduce(new ArrayList<>(), (acc, current) -> {
-						if (!acc.isEmpty() && current.id().isEmpty()) {
-							AssistantMessage.ToolCall prev = acc.get(acc.size() - 1);
-							acc.set(acc.size() - 1, new AssistantMessage.ToolCall(prev.id(), prev.type(), prev.name(),
-									current.function().arguments()));
-						}
-						else {
-							AssistantMessage.ToolCall currentToolCall = new AssistantMessage.ToolCall(current.id(),
-									current.type(), current.function().name(), current.function().arguments());
-							acc.add(currentToolCall);
-						}
-						return acc;
-					}, (acc1, acc2) -> {
-						acc1.addAll(acc2);
-						return acc1;
-					});
-		var assistantMessage = new AssistantMessage(choice.message().content(), metadata, toolCalls);
-		String finishReason = (choice.finishReason() != null ? choice.finishReason().name() : "");
-		var generationMetadata = ChatGenerationMetadata.from(finishReason, null);
+		var generationMetadata = ChatGenerationMetadata.builder().finishReason(finishReason).build();
 		return new Generation(assistantMessage, generationMetadata);
 	}
 
@@ -454,9 +458,8 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 			else if (message.getMessageType() == MessageType.TOOL) {
 				ToolResponseMessage toolMessage = (ToolResponseMessage) message;
 
-				toolMessage.getResponses().forEach(response -> {
-					Assert.isTrue(response.id() != null, "ToolResponseMessage must have an id");
-				});
+				toolMessage.getResponses()
+					.forEach(response -> Assert.isTrue(response.id() != null, "ToolResponseMessage must have an id"));
 
 				return toolMessage.getResponses()
 					.stream()
@@ -506,11 +509,11 @@ public class MiniMaxChatModel extends AbstractToolCallSupport implements ChatMod
 		return request;
 	}
 
-	private List<FunctionTool> getFunctionTools(Set<String> functionNames) {
+	private List<MiniMaxApi.FunctionTool> getFunctionTools(Set<String> functionNames) {
 		return this.resolveFunctionCallbacks(functionNames).stream().map(functionCallback -> {
-			var function = new FunctionTool.Function(functionCallback.getDescription(), functionCallback.getName(),
-					functionCallback.getInputTypeSchema());
-			return new FunctionTool(function);
+			var function = new MiniMaxApi.FunctionTool.Function(functionCallback.getDescription(),
+					functionCallback.getName(), functionCallback.getInputTypeSchema());
+			return new MiniMaxApi.FunctionTool(function);
 		}).toList();
 	}
 

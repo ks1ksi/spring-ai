@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
 
 import java.util.Date;
@@ -37,10 +38,10 @@ import org.springframework.util.Assert;
  */
 public class WeaviateFilterExpressionConverter extends AbstractFilterExpressionConverter {
 
-	private boolean mapIntegerToNumberValue = true;
-
 	// https://weaviate.io/developers/weaviate/api/graphql/filters#special-cases
 	private static final List<String> SYSTEM_IDENTIFIERS = List.of("id", "_creationTimeUnix", "_lastUpdateTimeUnix");
+
+	private boolean mapIntegerToNumberValue = true;
 
 	private List<String> allowedIdentifierNames;
 
@@ -82,32 +83,21 @@ public class WeaviateFilterExpressionConverter extends AbstractFilterExpressionC
 	}
 
 	private String getOperationSymbol(Expression exp) {
-		switch (exp.type()) {
-			case AND:
-				return "operator:And \n";
-			case OR:
-				return "operator:Or \n";
-			case EQ:
-				return "operator:Equal \n";
-			case NE:
-				return "operator:NotEqual \n";
-			case LT:
-				return "operator:LessThan \n";
-			case LTE:
-				return "operator:LessThanEqual \n";
-			case GT:
-				return "operator:GreaterThan \n";
-			case GTE:
-				return "operator:GreaterThanEqual \n";
-			case IN:
-				throw new IllegalStateException(
-						"The 'IN' operator should have been transformed into chain of OR/EQ expressions.");
-			case NIN:
-				throw new IllegalStateException(
-						"The 'NIN' operator should have been transformed into chain of AND/NEQ expressions.");
-			default:
-				throw new UnsupportedOperationException("Not supported expression type:" + exp.type());
-		}
+		return switch (exp.type()) {
+			case AND -> "operator:And \n";
+			case OR -> "operator:Or \n";
+			case EQ -> "operator:Equal \n";
+			case NE -> "operator:NotEqual \n";
+			case LT -> "operator:LessThan \n";
+			case LTE -> "operator:LessThanEqual \n";
+			case GT -> "operator:GreaterThan \n";
+			case GTE -> "operator:GreaterThanEqual \n";
+			case IN -> throw new IllegalStateException(
+					"The 'IN' operator should have been transformed into chain of OR/EQ expressions.");
+			case NIN -> throw new IllegalStateException(
+					"The 'NIN' operator should have been transformed into chain of AND/NEQ expressions.");
+			default -> throw new UnsupportedOperationException("Not supported expression type:" + exp.type());
+		};
 	}
 
 	@Override

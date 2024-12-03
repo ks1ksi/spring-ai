@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,28 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-
-import io.micrometer.observation.ObservationRegistry;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.model.EmbeddingUtils;
-import org.springframework.ai.observation.conventions.VectorStoreProvider;
-import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
-import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext.Builder;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import io.micrometer.observation.ObservationRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.model.EmbeddingUtils;
+import org.springframework.ai.observation.conventions.VectorStoreProvider;
+import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
+import org.springframework.ai.util.JacksonUtils;
+import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
+import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
+import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext.Builder;
+import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
 
 /**
  * The <b>SAP HANA Cloud vector engine</b> offers multiple use cases in AI scenarios.
@@ -64,6 +67,7 @@ import java.util.stream.Collectors;
  *
  * @author Rahul Mittal
  * @author Christian Tzolov
+ * @author Sebastien Deleuze
  * @see <a href=
  * "https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/introduction">SAP
  * HANA Database Vector Engine Guide</a>
@@ -78,6 +82,8 @@ public class HanaCloudVectorStore extends AbstractObservationVectorStore {
 	private final EmbeddingModel embeddingModel;
 
 	private final HanaCloudVectorStoreConfig config;
+
+	private final ObjectMapper objectMapper;
 
 	public HanaCloudVectorStore(HanaVectorRepository<? extends HanaVectorEntity> repository,
 			EmbeddingModel embeddingModel, HanaCloudVectorStoreConfig config) {
@@ -94,6 +100,7 @@ public class HanaCloudVectorStore extends AbstractObservationVectorStore {
 		this.repository = repository;
 		this.embeddingModel = embeddingModel;
 		this.config = config;
+		this.objectMapper = JsonMapper.builder().addModules(JacksonUtils.instantiateAvailableModules()).build();
 	}
 
 	@Override
@@ -104,27 +111,27 @@ public class HanaCloudVectorStore extends AbstractObservationVectorStore {
 					document.getId());
 			String content = document.getContent().replaceAll("\\s+", " ");
 			String embedding = getEmbedding(document);
-			repository.save(config.getTableName(), document.getId(), embedding, content);
+			this.repository.save(this.config.getTableName(), document.getId(), embedding, content);
 		}
 		logger.info("Embeddings saved in HanaCloudVectorStore for {} documents", count - 1);
 	}
 
 	@Override
 	public Optional<Boolean> doDelete(List<String> idList) {
-		int deleteCount = repository.deleteEmbeddingsById(config.getTableName(), idList);
+		int deleteCount = this.repository.deleteEmbeddingsById(this.config.getTableName(), idList);
 		logger.info("{} embeddings deleted", deleteCount);
 		return Optional.of(deleteCount == idList.size());
 	}
 
 	public int purgeEmbeddings() {
-		int deleteCount = repository.deleteAllEmbeddings(config.getTableName());
+		int deleteCount = this.repository.deleteAllEmbeddings(this.config.getTableName());
 		logger.info("{} embeddings deleted", deleteCount);
 		return deleteCount;
 	}
 
 	@Override
 	public List<Document> similaritySearch(String query) {
-		return similaritySearch(SearchRequest.query(query).withTopK(config.getTopK()));
+		return similaritySearch(SearchRequest.query(query).withTopK(this.config.getTopK()));
 	}
 
 	@Override
@@ -135,14 +142,14 @@ public class HanaCloudVectorStore extends AbstractObservationVectorStore {
 		}
 
 		String queryEmbedding = getEmbedding(request);
-		List<? extends HanaVectorEntity> searchResult = repository.cosineSimilaritySearch(config.getTableName(),
-				request.getTopK(), queryEmbedding);
+		List<? extends HanaVectorEntity> searchResult = this.repository
+			.cosineSimilaritySearch(this.config.getTableName(), request.getTopK(), queryEmbedding);
 		logger.info("Hana cosine-similarity for query={}, with topK={} returned {} results", request.getQuery(),
 				request.getTopK(), searchResult.size());
 
 		return searchResult.stream().map(c -> {
 			try {
-				return new Document(c.get_id(), c.toJson(), Collections.emptyMap());
+				return new Document(c.get_id(), this.objectMapper.writeValueAsString(c), Collections.emptyMap());
 			}
 			catch (JsonProcessingException e) {
 				throw new RuntimeException(e);

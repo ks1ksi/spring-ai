@@ -1,28 +1,29 @@
 /*
-* Copyright 2024 - 2024 the original author or authors.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* https://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * Copyright 2023-2024 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.springframework.ai.vectorstore.observation;
 
 import java.util.List;
+
+import io.micrometer.observation.Observation;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-
-import io.micrometer.observation.Observation;
 
 /**
  * Context used to store metadata for vector store operations.
@@ -33,36 +34,9 @@ import io.micrometer.observation.Observation;
  */
 public class VectorStoreObservationContext extends Observation.Context {
 
-	public enum Operation {
-
-		/**
-		 * VectorStore delete operation.
-		 */
-		ADD("add"),
-		/**
-		 * VectorStore add operation.
-		 */
-		DELETE("delete"),
-		/**
-		 * VectorStore similarity search operation.
-		 */
-		QUERY("query");
-
-		public final String value;
-
-		Operation(String value) {
-			this.value = value;
-		}
-
-		public String value() {
-			return this.value;
-		}
-
-	}
+	private final String databaseSystem;
 
 	// COMMON
-
-	private final String databaseSystem;
 
 	private final String operationName;
 
@@ -81,10 +55,10 @@ public class VectorStoreObservationContext extends Observation.Context {
 	@Nullable
 	private String similarityMetric;
 
-	// SEARCH
-
 	@Nullable
 	private SearchRequest queryRequest;
+
+	// SEARCH
 
 	@Nullable
 	private List<Document> queryResponse;
@@ -94,6 +68,14 @@ public class VectorStoreObservationContext extends Observation.Context {
 		Assert.hasText(operationName, "operationName cannot be null or empty");
 		this.databaseSystem = databaseSystem;
 		this.operationName = operationName;
+	}
+
+	public static Builder builder(String databaseSystem, String operationName) {
+		return new Builder(databaseSystem, operationName);
+	}
+
+	public static Builder builder(String databaseSystem, Operation operation) {
+		return builder(databaseSystem, operation.value);
 	}
 
 	public String getDatabaseSystem() {
@@ -106,7 +88,7 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public String getCollectionName() {
-		return collectionName;
+		return this.collectionName;
 	}
 
 	public void setCollectionName(@Nullable String collectionName) {
@@ -115,7 +97,7 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public Integer getDimensions() {
-		return dimensions;
+		return this.dimensions;
 	}
 
 	public void setDimensions(@Nullable Integer dimensions) {
@@ -124,7 +106,7 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public String getFieldName() {
-		return fieldName;
+		return this.fieldName;
 	}
 
 	public void setFieldName(@Nullable String fieldName) {
@@ -133,7 +115,7 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public String getNamespace() {
-		return namespace;
+		return this.namespace;
 	}
 
 	public void setNamespace(@Nullable String namespace) {
@@ -142,7 +124,7 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public String getSimilarityMetric() {
-		return similarityMetric;
+		return this.similarityMetric;
 	}
 
 	public void setSimilarityMetric(@Nullable String similarityMetric) {
@@ -151,7 +133,7 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public SearchRequest getQueryRequest() {
-		return queryRequest;
+		return this.queryRequest;
 	}
 
 	public void setQueryRequest(@Nullable SearchRequest queryRequest) {
@@ -160,19 +142,38 @@ public class VectorStoreObservationContext extends Observation.Context {
 
 	@Nullable
 	public List<Document> getQueryResponse() {
-		return queryResponse;
+		return this.queryResponse;
 	}
 
 	public void setQueryResponse(@Nullable List<Document> queryResponse) {
 		this.queryResponse = queryResponse;
 	}
 
-	public static Builder builder(String databaseSystem, String operationName) {
-		return new Builder(databaseSystem, operationName);
-	}
+	public enum Operation {
 
-	public static Builder builder(String databaseSystem, Operation operation) {
-		return builder(databaseSystem, operation.value);
+		/**
+		 * VectorStore add operation.
+		 */
+		ADD("add"),
+		/**
+		 * VectorStore delete operation.
+		 */
+		DELETE("delete"),
+		/**
+		 * VectorStore similarity search operation.
+		 */
+		QUERY("query");
+
+		public final String value;
+
+		Operation(String value) {
+			this.value = value;
+		}
+
+		public String value() {
+			return this.value;
+		}
+
 	}
 
 	public static class Builder {

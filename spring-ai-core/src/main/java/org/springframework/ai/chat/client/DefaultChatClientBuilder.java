@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import io.micrometer.observation.ObservationRegistry;
+
 import org.springframework.ai.chat.client.ChatClient.Builder;
 import org.springframework.ai.chat.client.ChatClient.PromptSystemSpec;
 import org.springframework.ai.chat.client.ChatClient.PromptUserSpec;
@@ -33,9 +35,8 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.model.function.FunctionCallback;
 import org.springframework.core.io.Resource;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-
-import io.micrometer.observation.ObservationRegistry;
 
 /**
  * DefaultChatClientBuilder is a builder class for creating a ChatClient.
@@ -46,6 +47,7 @@ import io.micrometer.observation.ObservationRegistry;
  * @author Christian Tzolov
  * @author Josh Long
  * @author Arjen Poutsma
+ * @author Thomas Vitale
  * @since 1.0.0
  */
 public class DefaultChatClientBuilder implements Builder {
@@ -57,10 +59,10 @@ public class DefaultChatClientBuilder implements Builder {
 	}
 
 	public DefaultChatClientBuilder(ChatModel chatModel, ObservationRegistry observationRegistry,
-			ChatClientObservationConvention customObservationConvention) {
+			@Nullable ChatClientObservationConvention customObservationConvention) {
 		Assert.notNull(chatModel, "the " + ChatModel.class.getName() + " must be non-null");
 		Assert.notNull(observationRegistry, "the " + ObservationRegistry.class.getName() + " must be non-null");
-		this.defaultRequest = new DefaultChatClientRequestSpec(chatModel, "", Map.of(), "", Map.of(), List.of(),
+		this.defaultRequest = new DefaultChatClientRequestSpec(chatModel, null, Map.of(), null, Map.of(), List.of(),
 				List.of(), List.of(), List.of(), null, List.of(), Map.of(), observationRegistry,
 				customObservationConvention, Map.of());
 	}
@@ -69,8 +71,12 @@ public class DefaultChatClientBuilder implements Builder {
 		return new DefaultChatClient(this.defaultRequest);
 	}
 
-	public Builder defaultAdvisors(Advisor... advisor) {
-		this.defaultRequest.advisors(advisor);
+	public Builder clone() {
+		return this.defaultRequest.mutate();
+	}
+
+	public Builder defaultAdvisors(Advisor... advisors) {
+		this.defaultRequest.advisors(advisors);
 		return this;
 	}
 
@@ -95,6 +101,8 @@ public class DefaultChatClientBuilder implements Builder {
 	}
 
 	public Builder defaultUser(Resource text, Charset charset) {
+		Assert.notNull(text, "text cannot be null");
+		Assert.notNull(charset, "charset cannot be null");
 		try {
 			this.defaultRequest.user(text.getContentAsString(charset));
 		}
@@ -119,6 +127,8 @@ public class DefaultChatClientBuilder implements Builder {
 	}
 
 	public Builder defaultSystem(Resource text, Charset charset) {
+		Assert.notNull(text, "text cannot be null");
+		Assert.notNull(charset, "charset cannot be null");
 		try {
 			this.defaultRequest.system(text.getContentAsString(charset));
 		}

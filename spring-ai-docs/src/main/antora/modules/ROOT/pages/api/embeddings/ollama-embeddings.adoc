@@ -7,20 +7,40 @@ Small distances suggest high relatedness and large distances suggest low related
 
 The `OllamaEmbeddingModel` implementation leverages the Ollama https://github.com/ollama/ollama/blob/main/docs/api.md#generate-embeddings[Embeddings API] endpoint.
 
-TIP: you can also pull, by name, any of the thousands, free, xref:https://huggingface.co/models?library=gguf&sort=trending[GGUF HuggingFace Models] 
-
 == Prerequisites
 
-You first need to xref:https://ollama.com/download[Download and install Ollama] on your local machine.
+You first need access to an Ollama instance. There are a few options, including the following:
 
-Also you can pull the models you want to use from the https://ollama.com/search?c=embedding[Ollama Embedding Models]: `ollama pull <selected embedding model name>`.
-Alternatively, you can enable the `pullMissingModel` option to automatically download missing models: xref:auto-pulling-models[Auto-pulling Models].
+* link:https://ollama.com/download[Download and install Ollama] on your local machine.
+* Configure and xref:api/testcontainers.adoc[run Ollama via Testcontainers].
+* Bind to an Ollama instance via xref:api/cloud-bindings.adoc[Kubernetes Service Bindings].
+
+You can pull the models you want to use in your application from the https://ollama.com/search?c=embedding[Ollama model library]:
+
+[source,shellscript]
+----
+ollama pull <model-name>
+----
+
+
+You can also pull any of the thousands, free, link:https://huggingface.co/models?library=gguf&sort=trending[GGUF Hugging Face Models]:
+
+[source,shellscript]
+----
+ollama pull hf.co/<username>/<model-repository>
+----
+
+Alternatively, you can enable the option to download automatically any needed model: xref:auto-pulling-models[Auto-pulling Models].
 
 == Auto-configuration
 
 Spring AI provides Spring Boot auto-configuration for the Azure Ollama Embedding Model.
-To enable it add the following dependency to your Maven `pom.xml` file:
+To enable it add the following dependency to your Maven `pom.xml` or Gradle `build.gradle` build files:
 
+[tabs]
+======
+Maven::
++
 [source,xml]
 ----
 <dependency>
@@ -29,30 +49,44 @@ To enable it add the following dependency to your Maven `pom.xml` file:
 </dependency>
 ----
 
-or to your Gradle `build.gradle` build file.
-
+Gradle::
++
 [source,groovy]
 ----
 dependencies {
     implementation 'org.springframework.ai:spring-ai-ollama-spring-boot-starter'
 }
 ----
+======
 
 TIP: Refer to the xref:getting-started.adoc#dependency-management[Dependency Management] section to add the Spring AI BOM to your build file.
 Spring AI artifacts are published in Spring Milestone and Snapshot repositories. Refer to the Repositories section to add these repositories to your build system.
 
-=== Embedding Properties
+=== Base Properties
 
 The prefix `spring.ai.ollama` is the property prefix to configure the connection to Ollama
 
 [cols="3,6,1"]
 |====
 | Property | Description | Default
-
 | spring.ai.ollama.base-url | Base URL where Ollama API server is running. | `http://localhost:11434`
 |====
 
-The prefix `spring.ai.ollama.embedding.options` is the property prefix that configures the Ollama embedding model .
+Here are the properties for initializing the Ollama integration and xref:auto-pulling-models[auto-pulling models].
+
+[cols="3,6,1"]
+|====
+| Property | Description | Default
+| spring.ai.ollama.init.pull-model-strategy | Whether to pull models at startup-time and how. | `never`
+| spring.ai.ollama.init.timeout | How long to wait for a model to be pulled. | `5m`
+| spring.ai.ollama.init.max-retries | Maximum number of retries for the model pull operation. | `0`
+| spring.ai.ollama.init.embedding.include | Include this type of models in the initialization task. | `true`
+| spring.ai.ollama.init.embedding.additional-models | Additional models to initialize besides the ones configured via default properties. | `[]`
+|====
+
+=== Embedding Properties
+
+The prefix `spring.ai.ollama.embedding.options` is the property prefix that configures the Ollama embedding model.
 It includes the Ollama request (advanced) parameters such as the `model`, `keep-alive`, and `truncate` as well as the Ollama model `options` properties.
 
 Here are the advanced request parameter for the Ollama embedding model:
@@ -63,7 +97,6 @@ Here are the advanced request parameter for the Ollama embedding model:
 | spring.ai.ollama.embedding.enabled      | Enables the Ollama embedding model auto-configuration. | true
 | spring.ai.ollama.embedding.options.model  | The name of the https://github.com/ollama/ollama?tab=readme-ov-file#model-library[supported model] to use. 
 You can use dedicated https://ollama.com/search?c=embedding[Embedding Model] types | mistral
-| spring.ai.ollama.embedding.options.pull-missing-model | Automatically pull missing models from Ollama repository | false
 | spring.ai.ollama.embedding.options.keep_alive  | Controls how long the model will stay loaded into memory following the request | 5m
 | spring.ai.ollama.embedding.options.truncate  | Truncates the end of each input to fit within context length. Returns error if false and context length is exceeded.  | true
 |====
@@ -129,31 +162,81 @@ EmbeddingResponse embeddingResponse = embeddingModel.call(
 ----
 
 [[auto-pulling-models]]
-=== Auto-pulling Models
+== Auto-pulling Models
 
-The `pullMissingModel` option allows you to automatically download and use models that are not currently available on your local Ollama instance. 
-This feature is particularly useful when working with different models or when deploying your application to new environments.
+Spring AI Ollama can automatically pull models when they are not available in your Ollama instance.
+This feature is particularly useful for development and testing as well as for deploying your applications to new environments.
 
-To enable auto-pulling of missing models, you can set the `pullMissingModel` option to `true` in your `OllamaOptions`:
+TIP: You can also pull, by name, any of the thousands, free, link:https://huggingface.co/models?library=gguf&sort=trending[GGUF Hugging Face Models].
 
-[source,java]
+There are three strategies for pulling models:
+
+* `always` (defined in `PullModelStrategy.ALWAYS`): Always pull the model, even if it's already available. Useful to ensure you're using the latest version of the model.
+* `when_missing` (defined in `PullModelStrategy.WHEN_MISSING`): Only pull the model if it's not already available. This may result in using an older version of the model.
+* `never` (defined in `PullModelStrategy.NEVER`): Never pull the model automatically.
+
+CAUTION: Due to potential delays while downloading models, automatic pulling is not recommended for production environments. Instead, consider assessing and pre-downloading the necessary models in advance.
+
+All models defined via configuration properties and default options can be automatically pulled at startup time.
+You can configure the pull strategy, timeout, and maximum number of retries using configuration properties:
+
+[source,yaml]
 ----
-EmbeddingResponse embeddingResponse = embeddingModel
-    .call(new EmbeddingRequest(List.of("Hello World", "Something else"),
-            OllamaOptions.builder()
-                .withModel("all-minilm:latest")
-                .withPullMissingModel(true)
-                .withTruncate(false)
-                .build()));
+spring:
+  ai:
+    ollama:
+      init:
+        pull-model-strategy: always
+        timeout: 60s
+        max-retries: 1
 ----
 
-TIP: you can also pull, by name, any of the thousands, free, xref:https://huggingface.co/models?library=gguf&sort=trending[GGUF HuggingFace Models] 
+CAUTION: The application will not complete its initialization until all specified models are available in Ollama. Depending on the model size and internet connection speed, this may significantly slow down your application's startup time.
 
-You can also configure this option using the following property: `spring.ai.ollama.embedding.options.pull-missing-model=true`
+You can initialize additional models at startup, which is useful for models used dynamically at runtime:
 
-When `pullMissingModel` is set to `true`, the system will attempt to download the specified model if it's not already available locally. This process may take some time depending on the size of the model and your internet connection speed.
+[source,yaml]
+----
+spring:
+  ai:
+    ollama:
+      init:
+        pull-model-strategy: always
+        embedding:
+          additional-models:
+            - mxbai-embed-large
+            - nomic-embed-text
+----
 
-CAUTION: Be aware that enabling this option may lead to unexpected delays in your application if it needs to download large model files. It's recommended to pre-download commonly used models in production environments.
+If you want to apply the pulling strategy only to specific types of models, you can exclude embedding models from the initialization task:
+
+[source,yaml]
+----
+spring:
+  ai:
+    ollama:
+      init:
+        pull-model-strategy: always
+        embedding:
+          include: false
+----
+
+This configuration will apply the pulling strategy to all models except embedding models.
+
+== HuggingFace Models
+
+Ollama can access, out of the box, all https://huggingface.co/models?library=gguf&sort=trending[GGUF Hugging Face] Embedding models.
+You can pull any of these models by name: `ollama pull hf.co/<username>/<model-repository>` or configure the auto-pulling strategy: xref:auto-pulling-models[Auto-pulling Models]:
+
+[source]
+----
+spring.ai.ollama.embedding.options.model=hf.co/mixedbread-ai/mxbai-embed-large-v1
+spring.ai.ollama.init.pull-model-strategy=always
+----
+
+- `spring.ai.ollama.embedding.options.model`: Specifies the https://huggingface.co/models?library=gguf&sort=trending[Hugging Face GGUF model] to use. 
+- `spring.ai.ollama.init.pull-model-strategy=always`: (optional) Enables automatic model pulling at startup time. 
+For production, you should pre-download the models to avoid delays: `ollama pull hf.co/mixedbread-ai/mxbai-embed-large-v1`.
 
 == Sample Controller
 
@@ -183,8 +266,12 @@ public class EmbeddingController {
 == Manual Configuration
 
 If you are not using Spring Boot, you can manually configure the `OllamaEmbeddingModel`.
-For this add the spring-ai-ollama dependency to your project’s Maven pom.xml file:
+For this add the spring-ai-ollama dependency to your project’s Maven pom.xml or Gradle `build.gradle` build files:
 
+[tabs]
+======
+Maven::
++
 [source,xml]
 ----
 <dependency>
@@ -193,14 +280,15 @@ For this add the spring-ai-ollama dependency to your project’s Maven pom.xml f
 </dependency>
 ----
 
-or to your Gradle `build.gradle` build file.
-
+Gradle::
++
 [source,groovy]
 ----
 dependencies {
     implementation 'org.springframework.ai:spring-ai-ollama'
 }
 ----
+======
 
 TIP: Refer to the xref:getting-started.adoc#dependency-management[Dependency Management] section to add the Spring AI BOM to your build file.
 
@@ -213,12 +301,12 @@ Next, create an `OllamaEmbeddingModel` instance and use it to compute the embedd
 ----
 var ollamaApi = new OllamaApi();
 
-var embeddingModel = new OllamaEmbeddingModel(ollamaApi,
+var embeddingModel = new OllamaEmbeddingModel(this.ollamaApi,
         OllamaOptions.builder()
 			.withModel(OllamaModel.MISTRAL.id())
             .build());
 
-EmbeddingResponse embeddingResponse = embeddingModel.call(
+EmbeddingResponse embeddingResponse = this.embeddingModel.call(
     new EmbeddingRequest(List.of("Hello World", "World is big and salvation is near"),
         OllamaOptions.builder()
             .withModel("chroma/all-minilm-l6-v2-f32"))

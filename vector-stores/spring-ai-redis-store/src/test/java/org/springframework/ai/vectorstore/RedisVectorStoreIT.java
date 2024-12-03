@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,9 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.springframework.ai.vectorstore;
 
-import static org.assertj.core.api.Assertions.assertThat;
+package org.springframework.ai.vectorstore;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -24,8 +23,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.redis.testcontainers.RedisStackContainer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.document.DocumentMetadata;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import redis.clients.jedis.JedisPooled;
+
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.transformers.TransformersEmbeddingModel;
@@ -40,15 +45,13 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import com.redis.testcontainers.RedisStackContainer;
-import redis.clients.jedis.JedisPooled;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Julien Ruaux
  * @author Eddú Meléndez
+ * @author Thomas Vitale
  */
 @Testcontainers
 class RedisVectorStoreIT {
@@ -84,33 +87,32 @@ class RedisVectorStoreIT {
 
 	@Test
 	void ensureIndexGetsCreated() {
-		this.contextRunner.run(context -> {
-			assertThat(context.getBean(RedisVectorStore.class).getJedis().ftList())
-				.contains(RedisVectorStore.DEFAULT_INDEX_NAME);
-		});
+		this.contextRunner.run(context -> assertThat(context.getBean(RedisVectorStore.class).getJedis().ftList())
+			.contains(RedisVectorStore.DEFAULT_INDEX_NAME));
 	}
 
 	@Test
 	void addAndSearch() {
 
-		contextRunner.run(context -> {
+		this.contextRunner.run(context -> {
 
 			VectorStore vectorStore = context.getBean(VectorStore.class);
 
-			vectorStore.add(documents);
+			vectorStore.add(this.documents);
 
 			List<Document> results = vectorStore.similaritySearch(SearchRequest.query("Spring").withTopK(1));
 
 			assertThat(results).hasSize(1);
 			Document resultDoc = results.get(0);
-			assertThat(resultDoc.getId()).isEqualTo(documents.get(0).getId());
+			assertThat(resultDoc.getId()).isEqualTo(this.documents.get(0).getId());
 			assertThat(resultDoc.getContent()).contains(
 					"Spring AI provides abstractions that serve as the foundation for developing AI applications.");
-			assertThat(resultDoc.getMetadata()).hasSize(2);
-			assertThat(resultDoc.getMetadata()).containsKeys("meta1", RedisVectorStore.DISTANCE_FIELD_NAME);
+			assertThat(resultDoc.getMetadata()).hasSize(3);
+			assertThat(resultDoc.getMetadata()).containsKeys("meta1", RedisVectorStore.DISTANCE_FIELD_NAME,
+					DocumentMetadata.DISTANCE.value());
 
 			// Remove all documents from the store
-			vectorStore.delete(documents.stream().map(doc -> doc.getId()).toList());
+			vectorStore.delete(this.documents.stream().map(doc -> doc.getId()).toList());
 
 			results = vectorStore.similaritySearch(SearchRequest.query("Spring").withTopK(1));
 			assertThat(results).isEmpty();
@@ -120,7 +122,7 @@ class RedisVectorStoreIT {
 	@Test
 	void searchWithFilters() throws InterruptedException {
 
-		contextRunner.run(context -> {
+		this.contextRunner.run(context -> {
 			VectorStore vectorStore = context.getBean(VectorStore.class);
 
 			var bgDocument = new Document("The World is Big and Salvation Lurks Around the Corner",
@@ -174,7 +176,7 @@ class RedisVectorStoreIT {
 	@Test
 	void documentUpdate() {
 
-		contextRunner.run(context -> {
+		this.contextRunner.run(context -> {
 
 			VectorStore vectorStore = context.getBean(VectorStore.class);
 
@@ -191,6 +193,7 @@ class RedisVectorStoreIT {
 			assertThat(resultDoc.getContent()).isEqualTo("Spring AI rocks!!");
 			assertThat(resultDoc.getMetadata()).containsKey("meta1");
 			assertThat(resultDoc.getMetadata()).containsKey(RedisVectorStore.DISTANCE_FIELD_NAME);
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			Document sameIdDocument = new Document(document.getId(),
 					"The World is Big and Salvation Lurks Around the Corner",
@@ -206,6 +209,7 @@ class RedisVectorStoreIT {
 			assertThat(resultDoc.getContent()).isEqualTo("The World is Big and Salvation Lurks Around the Corner");
 			assertThat(resultDoc.getMetadata()).containsKey("meta2");
 			assertThat(resultDoc.getMetadata()).containsKey(RedisVectorStore.DISTANCE_FIELD_NAME);
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 
 			vectorStore.delete(List.of(document.getId()));
 
@@ -215,33 +219,32 @@ class RedisVectorStoreIT {
 	@Test
 	void searchWithThreshold() {
 
-		contextRunner.run(context -> {
+		this.contextRunner.run(context -> {
 
 			VectorStore vectorStore = context.getBean(VectorStore.class);
 
-			vectorStore.add(documents);
+			vectorStore.add(this.documents);
 
 			List<Document> fullResult = vectorStore
 				.similaritySearch(SearchRequest.query("Spring").withTopK(5).withSimilarityThresholdAll());
 
-			List<Float> distances = fullResult.stream()
-				.map(doc -> (Float) doc.getMetadata().get(RedisVectorStore.DISTANCE_FIELD_NAME))
-				.toList();
+			List<Double> scores = fullResult.stream().map(Document::getScore).toList();
 
-			assertThat(distances).hasSize(3);
+			assertThat(scores).hasSize(3);
 
-			float threshold = (distances.get(0) + distances.get(1)) / 2;
+			double similarityThreshold = (scores.get(0) + scores.get(1)) / 2;
 
-			List<Document> results = vectorStore
-				.similaritySearch(SearchRequest.query("Spring").withTopK(5).withSimilarityThreshold(1 - threshold));
+			List<Document> results = vectorStore.similaritySearch(
+					SearchRequest.query("Spring").withTopK(5).withSimilarityThreshold(similarityThreshold));
 
 			assertThat(results).hasSize(1);
 			Document resultDoc = results.get(0);
-			assertThat(resultDoc.getId()).isEqualTo(documents.get(0).getId());
+			assertThat(resultDoc.getId()).isEqualTo(this.documents.get(0).getId());
 			assertThat(resultDoc.getContent()).contains(
 					"Spring AI provides abstractions that serve as the foundation for developing AI applications.");
-			assertThat(resultDoc.getMetadata()).containsKeys("meta1", RedisVectorStore.DISTANCE_FIELD_NAME);
-
+			assertThat(resultDoc.getMetadata()).containsKeys("meta1", RedisVectorStore.DISTANCE_FIELD_NAME,
+					DocumentMetadata.DISTANCE.value());
+			assertThat(resultDoc.getScore()).isGreaterThanOrEqualTo(similarityThreshold);
 		});
 	}
 

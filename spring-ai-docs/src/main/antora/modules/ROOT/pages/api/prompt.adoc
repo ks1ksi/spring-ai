@@ -95,7 +95,7 @@ More than just an answer or reaction, it's crucial for maintaining the flow of t
 By tracking the AI's previous responses (its 'Assistant Role' messages), the system ensures coherent and contextually relevant interactions.
 The Assistant message may contain Function Tool Call request information as well.
 It's like a special feature in the AI, used when needed to perform specific functions such as calculations, fetching data, or other tasks beyond just talking.
-* Tool/Function Role: The Too/Function Role focuses on returning additional information in response to Tool Call Assistant Messages.
+* Tool/Function Role: The Tool/Function Role focuses on returning additional information in response to Tool Call Assistant Messages.
 
 Roles are represented as an enumeration in Spring AI as shown below
 
@@ -202,7 +202,7 @@ A simple example taken from the https://github.com/Azure-Samples/spring-ai-azure
 
 PromptTemplate promptTemplate = new PromptTemplate("Tell me a {adjective} joke about {topic}");
 
-Prompt prompt = promptTemplate.create(Map.of("adjective", adjective, "topic", topic));
+Prompt prompt = this.promptTemplate.create(Map.of("adjective", adjective, "topic", topic));
 
 return chatModel.call(prompt).getResult();
 ```
@@ -215,7 +215,7 @@ String userText = """
     Write at least a sentence for each pirate.
     """;
 
-Message userMessage = new UserMessage(userText);
+Message userMessage = new UserMessage(this.userText);
 
 String systemText = """
   You are a helpful AI assistant that helps people find information.
@@ -223,12 +223,12 @@ String systemText = """
   You should reply to the user's request with your name and also in the style of a {voice}.
   """;
 
-SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(systemText);
-Message systemMessage = systemPromptTemplate.createMessage(Map.of("name", name, "voice", voice));
+SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(this.systemText);
+Message systemMessage = this.systemPromptTemplate.createMessage(Map.of("name", name, "voice", voice));
 
-Prompt prompt = new Prompt(List.of(userMessage, systemMessage));
+Prompt prompt = new Prompt(List.of(this.userMessage, this.systemMessage));
 
-List<Generation> response = chatModel.call(prompt).getResults();
+List<Generation> response = chatModel.call(this.prompt).getResults();
 
 ```
 

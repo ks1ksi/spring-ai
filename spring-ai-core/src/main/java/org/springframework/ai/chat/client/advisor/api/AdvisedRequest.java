@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import org.springframework.ai.model.Media;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -32,8 +31,11 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.ai.model.Media;
 import org.springframework.ai.model.function.FunctionCallback;
 import org.springframework.ai.model.function.FunctionCallingOptions;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -41,8 +43,6 @@ import org.springframework.util.StringUtils;
  * The data of the chat client request that can be modified before the execution of the
  * ChatClient's call method
  *
- * @author Christian Tzolov
- * @since 1.0.0
  * @param chatModel the chat model used
  * @param userText the text provided by the user
  * @param systemText the text provided by the system
@@ -57,19 +57,69 @@ import org.springframework.util.StringUtils;
  * @param advisorParams the map of advisor parameters
  * @param adviseContext the map of advise context
  * @param toolContext the tool context
+ * @author Christian Tzolov
+ * @author Thomas Vitale
+ * @since 1.0.0
  */
-public record AdvisedRequest(ChatModel chatModel, String userText, String systemText, ChatOptions chatOptions,
-		List<Media> media, List<String> functionNames, List<FunctionCallback> functionCallbacks, List<Message> messages,
-		Map<String, Object> userParams, Map<String, Object> systemParams, List<Advisor> advisors,
-		Map<String, Object> advisorParams, Map<String, Object> adviseContext, Map<String, Object> toolContext) {
+public record AdvisedRequest(
+// @formatter:off
+		ChatModel chatModel,
+		String userText,
+		@Nullable
+		String systemText,
+		@Nullable
+		ChatOptions chatOptions,
+		List<Media> media,
+		List<String> functionNames,
+		List<FunctionCallback> functionCallbacks,
+		List<Message> messages,
+		Map<String, Object> userParams,
+		Map<String, Object> systemParams,
+		List<Advisor> advisors,
+		Map<String, Object> advisorParams,
+		Map<String, Object> adviseContext,
+		Map<String, Object> toolContext
+// @formatter:on
+) {
 
-	public AdvisedRequest updateContext(Function<Map<String, Object>, Map<String, Object>> contextTransform) {
-		return from(this)
-			.withAdviseContext(Collections.unmodifiableMap(contextTransform.apply(new HashMap<>(this.adviseContext))))
-			.build();
+	public AdvisedRequest {
+		Assert.notNull(chatModel, "chatModel cannot be null");
+		Assert.isTrue(StringUtils.hasText(userText) || !CollectionUtils.isEmpty(messages),
+				"userText cannot be null or empty unless messages are provided and contain Tool Response message.");
+		Assert.notNull(media, "media cannot be null");
+		Assert.noNullElements(media, "media cannot contain null elements");
+		Assert.notNull(functionNames, "functionNames cannot be null");
+		Assert.noNullElements(functionNames, "functionNames cannot contain null elements");
+		Assert.notNull(functionCallbacks, "functionCallbacks cannot be null");
+		Assert.noNullElements(functionCallbacks, "functionCallbacks cannot contain null elements");
+		Assert.notNull(messages, "messages cannot be null");
+		Assert.noNullElements(messages, "messages cannot contain null elements");
+		Assert.notNull(userParams, "userParams cannot be null");
+		Assert.noNullElements(userParams.keySet(), "userParams keys cannot contain null elements");
+		Assert.noNullElements(userParams.values(), "userParams values cannot contain null elements");
+		Assert.notNull(systemParams, "systemParams cannot be null");
+		Assert.noNullElements(systemParams.keySet(), "systemParams keys cannot contain null elements");
+		Assert.noNullElements(systemParams.values(), "systemParams values cannot contain null elements");
+		Assert.notNull(advisors, "advisors cannot be null");
+		Assert.noNullElements(advisors, "advisors cannot contain null elements");
+		Assert.notNull(advisorParams, "advisorParams cannot be null");
+		Assert.noNullElements(advisorParams.keySet(), "advisorParams keys cannot contain null elements");
+		Assert.noNullElements(advisorParams.values(), "advisorParams values cannot contain null elements");
+		Assert.notNull(adviseContext, "adviseContext cannot be null");
+		Assert.noNullElements(adviseContext.keySet(), "adviseContext keys cannot contain null elements");
+		Assert.noNullElements(adviseContext.values(), "adviseContext values cannot contain null elements");
+		Assert.notNull(toolContext, "toolContext cannot be null");
+		Assert.noNullElements(toolContext.keySet(), "toolContext keys cannot contain null elements");
+		Assert.noNullElements(toolContext.values(), "toolContext values cannot contain null elements");
+	}
+
+	public static Builder builder() {
+		return new Builder();
 	}
 
 	public static Builder from(AdvisedRequest from) {
+		Assert.notNull(from, "AdvisedRequest cannot be null");
+
 		Builder builder = new Builder();
 		builder.chatModel = from.chatModel;
 		builder.userText = from.userText;
@@ -85,125 +135,18 @@ public record AdvisedRequest(ChatModel chatModel, String userText, String system
 		builder.advisorParams = from.advisorParams;
 		builder.adviseContext = from.adviseContext;
 		builder.toolContext = from.toolContext;
-
 		return builder;
 	}
 
-	public static Builder builder() {
-		return new Builder();
-	}
-
-	public static class Builder {
-
-		private ChatModel chatModel;
-
-		private String userText = "";
-
-		private String systemText = "";
-
-		private ChatOptions chatOptions = null;
-
-		private List<Media> media = List.of();
-
-		private List<String> functionNames = List.of();
-
-		private List<FunctionCallback> functionCallbacks = List.of();
-
-		private List<Message> messages = List.of();
-
-		private Map<String, Object> userParams = Map.of();
-
-		private Map<String, Object> systemParams = Map.of();
-
-		private List<Advisor> advisors = List.of();
-
-		private Map<String, Object> advisorParams = Map.of();
-
-		private Map<String, Object> adviseContext = Map.of();
-
-		public Map<String, Object> toolContext = Map.of();
-
-		public Builder withChatModel(ChatModel chatModel) {
-			this.chatModel = chatModel;
-			return this;
-		}
-
-		public Builder withUserText(String userText) {
-			this.userText = userText;
-			return this;
-		}
-
-		public Builder withSystemText(String systemText) {
-			this.systemText = systemText;
-			return this;
-		}
-
-		public Builder withChatOptions(ChatOptions chatOptions) {
-			this.chatOptions = chatOptions;
-			return this;
-		}
-
-		public Builder withMedia(List<Media> media) {
-			this.media = media;
-			return this;
-		}
-
-		public Builder withFunctionNames(List<String> functionNames) {
-			this.functionNames = functionNames;
-			return this;
-		}
-
-		public Builder withFunctionCallbacks(List<FunctionCallback> functionCallbacks) {
-			this.functionCallbacks = functionCallbacks;
-			return this;
-		}
-
-		public Builder withToolContext(Map<String, Object> toolContext) {
-			this.toolContext = toolContext;
-			return this;
-		}
-
-		public Builder withMessages(List<Message> messages) {
-			this.messages = messages;
-			return this;
-		}
-
-		public Builder withUserParams(Map<String, Object> userParams) {
-			this.userParams = userParams;
-			return this;
-		}
-
-		public Builder withSystemParams(Map<String, Object> systemParams) {
-			this.systemParams = systemParams;
-			return this;
-		}
-
-		public Builder withAdvisors(List<Advisor> advisors) {
-			this.advisors = advisors;
-			return this;
-		}
-
-		public Builder withAdvisorParams(Map<String, Object> advisorParams) {
-			this.advisorParams = advisorParams;
-			return this;
-		}
-
-		public Builder withAdviseContext(Map<String, Object> adviseContext) {
-			this.adviseContext = adviseContext;
-			return this;
-		}
-
-		public AdvisedRequest build() {
-			return new AdvisedRequest(chatModel, this.userText, this.systemText, this.chatOptions, this.media,
-					this.functionNames, this.functionCallbacks, this.messages, this.userParams, this.systemParams,
-					this.advisors, this.advisorParams, this.adviseContext, this.toolContext);
-		}
-
+	public AdvisedRequest updateContext(Function<Map<String, Object>, Map<String, Object>> contextTransform) {
+		Assert.notNull(contextTransform, "contextTransform cannot be null");
+		return from(this)
+			.withAdviseContext(Collections.unmodifiableMap(contextTransform.apply(new HashMap<>(this.adviseContext))))
+			.build();
 	}
 
 	public Prompt toPrompt() {
-
-		var messages = new ArrayList<Message>(this.messages());
+		var messages = new ArrayList<>(this.messages());
 
 		String processedSystemText = this.systemText();
 		if (StringUtils.hasText(processedSystemText)) {
@@ -219,7 +162,6 @@ public record AdvisedRequest(ChatModel chatModel, String userText, String system
 				? this.userText() + System.lineSeparator() + "{spring_ai_soc_format}" : this.userText();
 
 		if (StringUtils.hasText(processedUserText)) {
-
 			Map<String, Object> userParams = new HashMap<>(this.userParams());
 			if (StringUtils.hasText(formatParam)) {
 				userParams.put("spring_ai_soc_format", formatParam);
@@ -243,6 +185,194 @@ public record AdvisedRequest(ChatModel chatModel, String userText, String system
 		}
 
 		return new Prompt(messages, this.chatOptions());
+	}
+
+	/**
+	 * Builder for {@link AdvisedRequest}.
+	 */
+	public static final class Builder {
+
+		private ChatModel chatModel;
+
+		private String userText;
+
+		private String systemText;
+
+		private ChatOptions chatOptions;
+
+		private List<Media> media = List.of();
+
+		private List<String> functionNames = List.of();
+
+		private List<FunctionCallback> functionCallbacks = List.of();
+
+		private List<Message> messages = List.of();
+
+		private Map<String, Object> userParams = Map.of();
+
+		private Map<String, Object> systemParams = Map.of();
+
+		private List<Advisor> advisors = List.of();
+
+		private Map<String, Object> advisorParams = Map.of();
+
+		private Map<String, Object> adviseContext = Map.of();
+
+		public Map<String, Object> toolContext = Map.of();
+
+		private Builder() {
+		}
+
+		/**
+		 * Set the chat model.
+		 * @param chatModel the chat model
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withChatModel(ChatModel chatModel) {
+			this.chatModel = chatModel;
+			return this;
+		}
+
+		/**
+		 * Set the user text.
+		 * @param userText the user text
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withUserText(String userText) {
+			this.userText = userText;
+			return this;
+		}
+
+		/**
+		 * Set the system text.
+		 * @param systemText the system text
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withSystemText(String systemText) {
+			this.systemText = systemText;
+			return this;
+		}
+
+		/**
+		 * Set the chat options.
+		 * @param chatOptions the chat options
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withChatOptions(ChatOptions chatOptions) {
+			this.chatOptions = chatOptions;
+			return this;
+		}
+
+		/**
+		 * Set the media.
+		 * @param media the media
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withMedia(List<Media> media) {
+			this.media = media;
+			return this;
+		}
+
+		/**
+		 * Set the function names.
+		 * @param functionNames the function names
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withFunctionNames(List<String> functionNames) {
+			this.functionNames = functionNames;
+			return this;
+		}
+
+		/**
+		 * Set the function callbacks.
+		 * @param functionCallbacks the function callbacks
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withFunctionCallbacks(List<FunctionCallback> functionCallbacks) {
+			this.functionCallbacks = functionCallbacks;
+			return this;
+		}
+
+		/**
+		 * Set the messages.
+		 * @param messages the messages
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withMessages(List<Message> messages) {
+			this.messages = messages;
+			return this;
+		}
+
+		/**
+		 * Set the user params.
+		 * @param userParams the user params
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withUserParams(Map<String, Object> userParams) {
+			this.userParams = userParams;
+			return this;
+		}
+
+		/**
+		 * Set the system params.
+		 * @param systemParams the system params
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withSystemParams(Map<String, Object> systemParams) {
+			this.systemParams = systemParams;
+			return this;
+		}
+
+		/**
+		 * Set the advisors.
+		 * @param advisors the advisors
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withAdvisors(List<Advisor> advisors) {
+			this.advisors = advisors;
+			return this;
+		}
+
+		/**
+		 * Set the advisor params.
+		 * @param advisorParams the advisor params
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withAdvisorParams(Map<String, Object> advisorParams) {
+			this.advisorParams = advisorParams;
+			return this;
+		}
+
+		/**
+		 * Set the advise context.
+		 * @param adviseContext the advise context
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withAdviseContext(Map<String, Object> adviseContext) {
+			this.adviseContext = adviseContext;
+			return this;
+		}
+
+		/**
+		 * Set the tool context.
+		 * @param toolContext the tool context
+		 * @return this {@link Builder} instance
+		 */
+		public Builder withToolContext(Map<String, Object> toolContext) {
+			this.toolContext = toolContext;
+			return this;
+		}
+
+		/**
+		 * Build the {@link AdvisedRequest} instance.
+		 * @return a new {@link AdvisedRequest} instance
+		 */
+		public AdvisedRequest build() {
+			return new AdvisedRequest(this.chatModel, this.userText, this.systemText, this.chatOptions, this.media,
+					this.functionNames, this.functionCallbacks, this.messages, this.userParams, this.systemParams,
+					this.advisors, this.advisorParams, this.adviseContext, this.toolContext);
+		}
+
 	}
 
 }

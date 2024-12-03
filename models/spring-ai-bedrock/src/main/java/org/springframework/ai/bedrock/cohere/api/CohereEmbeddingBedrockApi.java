@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,8 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// @formatter:off
+
 package org.springframework.ai.bedrock.cohere.api;
+
+// @formatter:off
 
 import java.time.Duration;
 import java.util.List;
@@ -109,6 +111,39 @@ public class CohereEmbeddingBedrockApi extends
 		super(modelId, credentialsProvider, region, objectMapper, timeout);
 	}
 
+	@Override
+	public CohereEmbeddingResponse embedding(CohereEmbeddingRequest request) {
+		return this.internalInvocation(request, CohereEmbeddingResponse.class);
+	}
+
+	/**
+	 * Cohere Embedding model ids. https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids-arns.html
+	 */
+	public enum CohereEmbeddingModel {
+		/**
+		 * cohere.embed-multilingual-v3
+		 */
+		COHERE_EMBED_MULTILINGUAL_V1("cohere.embed-multilingual-v3"),
+		/**
+		 * cohere.embed-english-v3
+		 */
+		COHERE_EMBED_ENGLISH_V3("cohere.embed-english-v3");
+
+		private final String id;
+
+		CohereEmbeddingModel(String value) {
+			this.id = value;
+		}
+
+		/**
+		 * @return The model id.
+		 */
+		public String id() {
+			return this.id;
+		}
+
+	}
+
 	/**
 	 * The Cohere Embed model request.
 	 *
@@ -136,19 +171,23 @@ public class CohereEmbeddingBedrockApi extends
 			 * In search use-cases, use search_document when you encode documents for embeddings that you store in a
 			 * vector database.
 			 */
-			@JsonProperty("search_document") SEARCH_DOCUMENT,
+			@JsonProperty("search_document")
+			SEARCH_DOCUMENT,
 			/**
 			 * Use search_query when querying your vector DB to find relevant documents.
 			 */
-			@JsonProperty("search_query") SEARCH_QUERY,
+			@JsonProperty("search_query")
+			SEARCH_QUERY,
 			/**
 			 * Use classification when using embeddings as an input to a text classifier.
 			 */
-			@JsonProperty("classification") CLASSIFICATION,
+			@JsonProperty("classification")
+			CLASSIFICATION,
 			/**
 			 * Use clustering to cluster the embeddings.
 			 */
-			@JsonProperty("clustering") CLUSTERING
+			@JsonProperty("clustering")
+			CLUSTERING
 		}
 
 		/**
@@ -177,6 +216,7 @@ public class CohereEmbeddingBedrockApi extends
 	 * @param embeddings An array of embeddings, where each embedding is an array of floats with 1024 elements. The
 	 * length of the embeddings array will be the same as the length of the original texts array.
 	 * @param texts An array containing the text entries for which embeddings were returned.
+	 * @param responseType The type of the response. The value is always embeddings.
 	 * @param amazonBedrockInvocationMetrics Bedrock invocation metrics. Currently bedrock doesn't return
 	 * invocationMetrics for the cohere embedding model.
 	 */
@@ -188,39 +228,6 @@ public class CohereEmbeddingBedrockApi extends
 			@JsonProperty("response_type") String responseType,
 			// For future use: Currently bedrock doesn't return invocationMetrics for the cohere embedding model.
 			@JsonProperty("amazon-bedrock-invocationMetrics") AmazonBedrockInvocationMetrics amazonBedrockInvocationMetrics) {
-	}
-
-	/**
-	 * Cohere Embedding model ids. https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids-arns.html
-	 */
-	public enum CohereEmbeddingModel {
-		/**
-		 * cohere.embed-multilingual-v3
-		 */
-		COHERE_EMBED_MULTILINGUAL_V1("cohere.embed-multilingual-v3"),
-		/**
-		 * cohere.embed-english-v3
-		 */
-		COHERE_EMBED_ENGLISH_V3("cohere.embed-english-v3");
-
-		private final String id;
-
-		/**
-		 * @return The model id.
-		 */
-		public String id() {
-			return this.id;
-		}
-
-		CohereEmbeddingModel(String value) {
-			this.id = value;
-		}
-
-	}
-
-	@Override
-	public CohereEmbeddingResponse embedding(CohereEmbeddingRequest request) {
-		return this.internalInvocation(request, CohereEmbeddingResponse.class);
 	}
 
 }

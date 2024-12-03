@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package org.springframework.ai.openai.chat;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -28,13 +26,16 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.AdvisedRequest;
 import org.springframework.ai.chat.client.advisor.api.AdvisedResponse;
-import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisor;
+import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisorChain;
 import org.springframework.ai.converter.BeanOutputConverter;
-import org.springframework.ai.model.function.FunctionCallbackContext;
+import org.springframework.ai.model.function.DefaultFunctionCallbackResolver;
+import org.springframework.ai.model.function.FunctionCallbackResolver;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -48,7 +49,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Description;
 import org.springframework.core.ParameterizedTypeReference;
 
-import reactor.core.publisher.Flux;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Christian Tzolov
@@ -59,10 +60,74 @@ public class OpenAiPaymentTransactionIT {
 
 	private final static Logger logger = LoggerFactory.getLogger(OpenAiPaymentTransactionIT.class);
 
+	private static final Map<Transaction, Status> DATASET = Map.of(new Transaction("001"), new Status("pending"),
+			new Transaction("002"), new Status("approved"), new Transaction("003"), new Status("rejected"));
+
 	@Autowired
 	ChatClient chatClient;
 
+	@ParameterizedTest(name = "{0} : {displayName} ")
+	@ValueSource(strings = { "paymentStatus", "paymentStatuses" })
+	public void transactionPaymentStatuses(String functionName) {
+		List<TransactionStatusResponse> content = this.chatClient.prompt()
+			.advisors(new LoggingAdvisor())
+			.functions(functionName)
+			.user("""
+					What is the status of my payment transactions 001, 002 and 003?
+					""")
+			.call()
+			.entity(new ParameterizedTypeReference<List<TransactionStatusResponse>>() {
+
+			});
+
+		logger.info("" + content);
+
+		assertThat(content.get(0).id()).isEqualTo("001");
+		assertThat(content.get(0).status()).isEqualTo("pending");
+
+		assertThat(content.get(1).id()).isEqualTo("002");
+		assertThat(content.get(1).status()).isEqualTo("approved");
+
+		assertThat(content.get(2).id()).isEqualTo("003");
+		assertThat(content.get(2).status()).isEqualTo("rejected");
+	}
+
+	@ParameterizedTest(name = "{0} : {displayName} ")
+	@ValueSource(strings = { "paymentStatus", "paymentStatuses" })
+	public void streamingPaymentStatuses(String functionName) {
+
+		var converter = new BeanOutputConverter<>(new ParameterizedTypeReference<List<TransactionStatusResponse>>() {
+
+		});
+
+		Flux<String> flux = this.chatClient.prompt()
+			.advisors(new LoggingAdvisor())
+			.functions(functionName)
+			.user(u -> u.text("""
+					What is the status of my payment transactions 001, 002 and 003?
+
+					{format}
+					""").param("format", converter.getFormat()))
+			.stream()
+			.content();
+
+		String content = flux.collectList().block().stream().collect(Collectors.joining());
+
+		List<TransactionStatusResponse> structure = converter.convert(content);
+		logger.info("" + content);
+
+		assertThat(structure.get(0).id()).isEqualTo("001");
+		assertThat(structure.get(0).status()).isEqualTo("pending");
+
+		assertThat(structure.get(1).id()).isEqualTo("002");
+		assertThat(structure.get(1).status()).isEqualTo("approved");
+
+		assertThat(structure.get(2).id()).isEqualTo("003");
+		assertThat(structure.get(2).status()).isEqualTo("rejected");
+	}
+
 	record TransactionStatusResponse(String id, String status) {
+
 	}
 
 	private static class LoggingAdvisor implements CallAroundAdvisor {
@@ -108,78 +173,21 @@ public class OpenAiPaymentTransactionIT {
 
 	}
 
-	@ParameterizedTest(name = "{0} : {displayName} ")
-	@ValueSource(strings = { "paymentStatus", "paymentStatuses" })
-	public void transactionPaymentStatuses(String functionName) {
-		List<TransactionStatusResponse> content = this.chatClient.prompt()
-			.advisors(new LoggingAdvisor())
-			.functions(functionName)
-			.user("""
-					What is the status of my payment transactions 001, 002 and 003?
-					""")
-			.call()
-			.entity(new ParameterizedTypeReference<List<TransactionStatusResponse>>() {
-			});
-
-		logger.info("" + content);
-
-		assertThat(content.get(0).id()).isEqualTo("001");
-		assertThat(content.get(0).status()).isEqualTo("pending");
-
-		assertThat(content.get(1).id()).isEqualTo("002");
-		assertThat(content.get(1).status()).isEqualTo("approved");
-
-		assertThat(content.get(2).id()).isEqualTo("003");
-		assertThat(content.get(2).status()).isEqualTo("rejected");
-	}
-
-	@ParameterizedTest(name = "{0} : {displayName} ")
-	@ValueSource(strings = { "paymentStatus", "paymentStatuses" })
-	public void streamingPaymentStatuses(String functionName) {
-
-		var converter = new BeanOutputConverter<>(new ParameterizedTypeReference<List<TransactionStatusResponse>>() {
-		});
-
-		Flux<String> flux = this.chatClient.prompt()
-			.advisors(new LoggingAdvisor())
-			.functions(functionName)
-			.user(u -> u.text("""
-					What is the status of my payment transactions 001, 002 and 003?
-
-					{format}
-					""").param("format", converter.getFormat()))
-			.stream()
-			.content();
-
-		String content = flux.collectList().block().stream().collect(Collectors.joining());
-
-		List<TransactionStatusResponse> structure = converter.convert(content);
-		logger.info("" + content);
-
-		assertThat(structure.get(0).id()).isEqualTo("001");
-		assertThat(structure.get(0).status()).isEqualTo("pending");
-
-		assertThat(structure.get(1).id()).isEqualTo("002");
-		assertThat(structure.get(1).status()).isEqualTo("approved");
-
-		assertThat(structure.get(2).id()).isEqualTo("003");
-		assertThat(structure.get(2).status()).isEqualTo("rejected");
-	}
-
 	record Transaction(String id) {
+
 	}
 
 	record Status(String name) {
+
 	}
 
 	record Transactions(List<Transaction> transactions) {
+
 	}
 
 	record Statuses(List<Status> statuses) {
-	}
 
-	private static final Map<Transaction, Status> DATASET = Map.of(new Transaction("001"), new Status("pending"),
-			new Transaction("002"), new Status("approved"), new Transaction("003"), new Status("rejected"));
+	}
 
 	@SpringBootConfiguration
 	public static class TestConfiguration {
@@ -213,22 +221,22 @@ public class OpenAiPaymentTransactionIT {
 		}
 
 		@Bean
-		public OpenAiChatModel openAiClient(OpenAiApi openAiApi, FunctionCallbackContext functionCallbackContext) {
+		public OpenAiChatModel openAiClient(OpenAiApi openAiApi, FunctionCallbackResolver functionCallbackResolver) {
 			return new OpenAiChatModel(openAiApi,
 					OpenAiChatOptions.builder()
 						.withModel(ChatModel.GPT_4_O_MINI.getName())
 						.withTemperature(0.1)
 						.build(),
-					functionCallbackContext, RetryUtils.DEFAULT_RETRY_TEMPLATE);
+					functionCallbackResolver, RetryUtils.DEFAULT_RETRY_TEMPLATE);
 		}
 
 		/**
-		 * Because of the OPEN_API_SCHEMA type, the FunctionCallbackContext instance must
+		 * Because of the OPEN_API_SCHEMA type, the FunctionCallbackResolver instance must
 		 * different from the other JSON schema types.
 		 */
 		@Bean
-		public FunctionCallbackContext springAiFunctionManager(ApplicationContext context) {
-			FunctionCallbackContext manager = new FunctionCallbackContext();
+		public FunctionCallbackResolver springAiFunctionManager(ApplicationContext context) {
+			DefaultFunctionCallbackResolver manager = new DefaultFunctionCallbackResolver();
 			manager.setApplicationContext(context);
 			return manager;
 		}

@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vertexai.gemini;
 
 import java.io.IOException;
@@ -28,18 +29,18 @@ import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.model.Media;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.converter.ListOutputConverter;
 import org.springframework.ai.converter.MapOutputConverter;
+import org.springframework.ai.model.Media;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringBootConfiguration;
@@ -48,6 +49,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
+import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,19 +68,19 @@ class VertexAiGeminiChatModelIT {
 	@Test
 	void roleTest() {
 		Prompt prompt = createPrompt(VertexAiGeminiChatOptions.builder().build());
-		ChatResponse response = chatModel.call(prompt);
+		ChatResponse response = this.chatModel.call(prompt);
 		assertThat(response.getResult().getOutput().getContent()).containsAnyOf("Blackbeard", "Bartholomew");
 	}
 
 	@Test
 	void testMessageHistory() {
 		Prompt prompt = createPrompt(VertexAiGeminiChatOptions.builder().build());
-		ChatResponse response = chatModel.call(prompt);
+		ChatResponse response = this.chatModel.call(prompt);
 		assertThat(response.getResult().getOutput().getContent()).containsAnyOf("Blackbeard", "Bartholomew");
 
 		var promptWithMessageHistory = new Prompt(List.of(new UserMessage("Dummy"), prompt.getInstructions().get(1),
 				response.getResult().getOutput(), new UserMessage("Repeat the last assistant message.")));
-		response = chatModel.call(promptWithMessageHistory);
+		response = this.chatModel.call(promptWithMessageHistory);
 
 		assertThat(response.getResult().getOutput().getContent()).containsAnyOf("Blackbeard", "Bartholomew");
 	}
@@ -86,7 +88,7 @@ class VertexAiGeminiChatModelIT {
 	@Test
 	void googleSearchTool() {
 		Prompt prompt = createPrompt(VertexAiGeminiChatOptions.builder().withGoogleSearchRetrieval(true).build());
-		ChatResponse response = chatModel.call(prompt);
+		ChatResponse response = this.chatModel.call(prompt);
 		assertThat(response.getResult().getOutput().getContent()).containsAnyOf("Blackbeard", "Bartholomew");
 	}
 
@@ -96,7 +98,7 @@ class VertexAiGeminiChatModelIT {
 		String name = "Bob";
 		String voice = "pirate";
 		UserMessage userMessage = new UserMessage(request);
-		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(systemResource);
+		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(this.systemResource);
 		Message systemMessage = systemPromptTemplate.createMessage(Map.of("name", name, "voice", voice));
 		Prompt prompt = new Prompt(List.of(userMessage, systemMessage), chatOptions);
 		return prompt;
@@ -105,9 +107,9 @@ class VertexAiGeminiChatModelIT {
 	@Test
 	void listOutputConverter() {
 		DefaultConversionService conversionService = new DefaultConversionService();
-		ListOutputConverter outputParser = new ListOutputConverter(conversionService);
+		ListOutputConverter converter = new ListOutputConverter(conversionService);
 
-		String format = outputParser.getFormat();
+		String format = converter.getFormat();
 		String template = """
 				List five {subject}
 				{format}
@@ -117,7 +119,7 @@ class VertexAiGeminiChatModelIT {
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
 		Generation generation = this.chatModel.call(prompt).getResult();
 
-		List<String> list = outputParser.convert(generation.getOutput().getContent());
+		List<String> list = converter.convert(generation.getOutput().getContent());
 		assertThat(list).hasSize(5);
 	}
 
@@ -133,14 +135,11 @@ class VertexAiGeminiChatModelIT {
 		PromptTemplate promptTemplate = new PromptTemplate(template,
 				Map.of("subject", "an array of numbers from 1 to 9 under they key name 'numbers'", "format", format));
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
-		Generation generation = chatModel.call(prompt).getResult();
+		Generation generation = this.chatModel.call(prompt).getResult();
 
 		Map<String, Object> result = outputConverter.convert(generation.getOutput().getContent());
 		assertThat(result.get("numbers")).isEqualTo(Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9));
 
-	}
-
-	record ActorsFilmsRecord(String actor, List<String> movies) {
 	}
 
 	@Test
@@ -156,7 +155,7 @@ class VertexAiGeminiChatModelIT {
 				""";
 		PromptTemplate promptTemplate = new PromptTemplate(template, Map.of("format", format));
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
-		Generation generation = chatModel.call(prompt).getResult();
+		Generation generation = this.chatModel.call(prompt).getResult();
 
 		ActorsFilmsRecord actorsFilms = outputConvert.convert(generation.getOutput().getContent());
 		assertThat(actorsFilms.actor()).isEqualTo("Tom Hanks");
@@ -166,7 +165,8 @@ class VertexAiGeminiChatModelIT {
 	@Test
 	void textStream() {
 
-		String generationTextFromStream = chatModel.stream(new Prompt("Explain Bulgaria? Answer in 10 paragraphs."))
+		String generationTextFromStream = this.chatModel
+			.stream(new Prompt("Explain Bulgaria? Answer in 10 paragraphs."))
 			.collectList()
 			.block()
 			.stream()
@@ -194,7 +194,7 @@ class VertexAiGeminiChatModelIT {
 		PromptTemplate promptTemplate = new PromptTemplate(template, Map.of("format", format));
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
 
-		String generationTextFromStream = chatModel.stream(prompt)
+		String generationTextFromStream = this.chatModel.stream(prompt)
 			.collectList()
 			.block()
 			.stream()
@@ -218,7 +218,7 @@ class VertexAiGeminiChatModelIT {
 		var userMessage = new UserMessage("Explain what do you see o this picture?",
 				List.of(new Media(MimeTypeUtils.IMAGE_PNG, data)));
 
-		var response = chatModel.call(new Prompt(List.of(userMessage)));
+		var response = this.chatModel.call(new Prompt(List.of(userMessage)));
 
 		// Response should contain something like:
 		// I see a bunch of bananas in a golden basket. The bananas are ripe and yellow.
@@ -245,6 +245,24 @@ class VertexAiGeminiChatModelIT {
 		// "apple", "basket");
 
 		// https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/use-cases/intro_multimodal_use_cases.ipynb
+	}
+
+	@Test
+	void multiModalityPdfTest() throws IOException {
+
+		var pdfData = new ClassPathResource("/spring-ai-reference-overview.pdf");
+
+		var userMessage = new UserMessage(
+				"You are a very professional document summarization specialist. Please summarize the given document.",
+				List.of(new Media(new MimeType("application", "pdf"), pdfData)));
+
+		var response = this.chatModel.call(new Prompt(List.of(userMessage)));
+
+		assertThat(response.getResult().getOutput().getContent()).containsAnyOf("Spring AI", "portable API");
+	}
+
+	record ActorsFilmsRecord(String actor, List<String> movies) {
+
 	}
 
 	@SpringBootConfiguration

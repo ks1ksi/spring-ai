@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,17 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.model.function;
 
+import java.lang.reflect.Type;
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-import org.springframework.ai.chat.model.ToolContext;
-import org.springframework.util.Assert;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.util.Assert;
 
 /**
  * Abstract implementation of the {@link FunctionCallback} for interacting with the
@@ -46,7 +48,7 @@ abstract class AbstractFunctionCallback<I, O> implements BiFunction<I, ToolConte
 
 	private final String description;
 
-	private final Class<I> inputType;
+	private final Type inputType;
 
 	private final String inputTypeSchema;
 
@@ -69,7 +71,7 @@ abstract class AbstractFunctionCallback<I, O> implements BiFunction<I, ToolConte
 	 * @param objectMapper Used to convert the function's input and output types to and
 	 * from JSON.
 	 */
-	protected AbstractFunctionCallback(String name, String description, String inputTypeSchema, Class<I> inputType,
+	protected AbstractFunctionCallback(String name, String description, String inputTypeSchema, Type inputType,
 			Function<O, String> responseConverter, ObjectMapper objectMapper) {
 		Assert.notNull(name, "Name must not be null");
 		Assert.notNull(description, "Description must not be null");
@@ -102,7 +104,7 @@ abstract class AbstractFunctionCallback<I, O> implements BiFunction<I, ToolConte
 
 	@Override
 	public String call(String functionInput, ToolContext toolContext) {
-		I request = fromJson(functionInput, inputType);
+		I request = fromJson(functionInput, this.inputType);
 		O response = this.apply(request, toolContext);
 		return this.responseConverter.apply(response);
 	}
@@ -110,14 +112,14 @@ abstract class AbstractFunctionCallback<I, O> implements BiFunction<I, ToolConte
 	@Override
 	public String call(String functionArguments) {
 		// Convert the tool calls JSON arguments into a Java function request object.
-		I request = fromJson(functionArguments, inputType);
+		I request = fromJson(functionArguments, this.inputType);
 		// extend conversation with function response.
 		return this.andThen(this.responseConverter).apply(request, null);
 	}
 
-	private <T> T fromJson(String json, Class<T> targetClass) {
+	private <T> T fromJson(String json, Type targetType) {
 		try {
-			return this.objectMapper.readValue(json, targetClass);
+			return this.objectMapper.readValue(json, this.objectMapper.constructType(targetType));
 		}
 		catch (JsonProcessingException e) {
 			throw new RuntimeException(e);
@@ -126,15 +128,17 @@ abstract class AbstractFunctionCallback<I, O> implements BiFunction<I, ToolConte
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(name, description, inputType);
+		return Objects.hash(this.name, this.description, this.inputType);
 	}
 
 	@Override
 	public boolean equals(Object obj) {
-		if (this == obj)
+		if (this == obj) {
 			return true;
-		if (obj == null || getClass() != obj.getClass())
+		}
+		if (obj == null || getClass() != obj.getClass()) {
 			return false;
+		}
 
 		AbstractFunctionCallback other = (AbstractFunctionCallback) obj;
 

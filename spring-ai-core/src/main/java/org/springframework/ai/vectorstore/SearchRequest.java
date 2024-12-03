@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,15 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
+
+import java.util.Objects;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-
-import java.util.Objects;
 
 /**
  * Similarity search request builder. Use the {@link #query(String)}, {@link #defaults()}
@@ -29,8 +31,9 @@ import java.util.Objects;
  * instance and then apply the 'with' methods to alter the default values.
  *
  * @author Christian Tzolov
+ * @author Thomas Vitale
  */
-public class SearchRequest {
+public final class SearchRequest {
 
 	/**
 	 * Similarity threshold that accepts all search scores. A threshold value of 0.0 means
@@ -44,12 +47,13 @@ public class SearchRequest {
 	 */
 	public static final int DEFAULT_TOP_K = 4;
 
-	public String query;
+	private String query;
 
 	private int topK = DEFAULT_TOP_K;
 
 	private double similarityThreshold = SIMILARITY_THRESHOLD_ACCEPT_ALL;
 
+	@Nullable
 	private Filter.Expression filterExpression;
 
 	private SearchRequest(String query) {
@@ -185,7 +189,7 @@ public class SearchRequest {
 	 * filter criteria. The 'null' value stands for no expression filters.
 	 * @return this builder.
 	 */
-	public SearchRequest withFilterExpression(Filter.Expression expression) {
+	public SearchRequest withFilterExpression(@Nullable Filter.Expression expression) {
 		this.filterExpression = expression;
 		return this;
 	}
@@ -224,26 +228,27 @@ public class SearchRequest {
 	 * 'null' value stands for no expression filters.
 	 * @return this.builder
 	 */
-	public SearchRequest withFilterExpression(String textExpression) {
+	public SearchRequest withFilterExpression(@Nullable String textExpression) {
 		this.filterExpression = (textExpression != null) ? new FilterExpressionTextParser().parse(textExpression)
 				: null;
 		return this;
 	}
 
 	public String getQuery() {
-		return query;
+		return this.query;
 	}
 
 	public int getTopK() {
-		return topK;
+		return this.topK;
 	}
 
 	public double getSimilarityThreshold() {
-		return similarityThreshold;
+		return this.similarityThreshold;
 	}
 
+	@Nullable
 	public Filter.Expression getFilterExpression() {
-		return filterExpression;
+		return this.filterExpression;
 	}
 
 	public boolean hasFilterExpression() {
@@ -252,24 +257,27 @@ public class SearchRequest {
 
 	@Override
 	public String toString() {
-		return "SearchRequest{" + "query='" + query + '\'' + ", topK=" + topK + ", similarityThreshold="
-				+ similarityThreshold + ", filterExpression=" + filterExpression + '}';
+		return "SearchRequest{" + "query='" + this.query + '\'' + ", topK=" + this.topK + ", similarityThreshold="
+				+ this.similarityThreshold + ", filterExpression=" + this.filterExpression + '}';
 	}
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		SearchRequest that = (SearchRequest) o;
-		return topK == that.topK && Double.compare(that.similarityThreshold, similarityThreshold) == 0
-				&& Objects.equals(query, that.query) && Objects.equals(filterExpression, that.filterExpression);
+		return this.topK == that.topK && Double.compare(that.similarityThreshold, this.similarityThreshold) == 0
+				&& Objects.equals(this.query, that.query)
+				&& Objects.equals(this.filterExpression, that.filterExpression);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(query, topK, similarityThreshold, filterExpression);
+		return Objects.hash(this.query, this.topK, this.similarityThreshold, this.filterExpression);
 	}
 
 }

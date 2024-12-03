@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,18 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.ollama;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 import io.micrometer.observation.tck.TestObservationRegistry;
 import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIf;
+import reactor.core.publisher.Flux;
+
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.model.function.FunctionCallbackContext;
 import org.springframework.ai.observation.conventions.AiOperationType;
 import org.springframework.ai.observation.conventions.AiProvider;
 import org.springframework.ai.ollama.api.OllamaApi;
@@ -34,10 +38,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
-import reactor.core.publisher.Flux;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.ai.chat.observation.ChatModelObservationDocumentation.HighCardinalityKeyNames;
@@ -49,7 +49,6 @@ import static org.springframework.ai.chat.observation.ChatModelObservationDocume
  * @author Thomas Vitale
  */
 @SpringBootTest(classes = OllamaChatModelObservationIT.Config.class)
-@DisabledIf("isDisabled")
 public class OllamaChatModelObservationIT extends BaseOllamaIT {
 
 	private static final String MODEL = OllamaModel.LLAMA3_2.getName();
@@ -62,7 +61,7 @@ public class OllamaChatModelObservationIT extends BaseOllamaIT {
 
 	@BeforeEach
 	void beforeEach() {
-		observationRegistry.clear();
+		this.observationRegistry.clear();
 	}
 
 	@Test
@@ -80,7 +79,7 @@ public class OllamaChatModelObservationIT extends BaseOllamaIT {
 
 		Prompt prompt = new Prompt("Why does a raven look like a desk?", options);
 
-		ChatResponse chatResponse = chatModel.call(prompt);
+		ChatResponse chatResponse = this.chatModel.call(prompt);
 		assertThat(chatResponse.getResult().getOutput().getContent()).isNotEmpty();
 
 		ChatResponseMetadata responseMetadata = chatResponse.getMetadata();
@@ -104,7 +103,7 @@ public class OllamaChatModelObservationIT extends BaseOllamaIT {
 
 		Prompt prompt = new Prompt("Why does a raven look like a desk?", options);
 
-		Flux<ChatResponse> chatResponseFlux = chatModel.stream(prompt);
+		Flux<ChatResponse> chatResponseFlux = this.chatModel.stream(prompt);
 
 		List<ChatResponse> responses = chatResponseFlux.collectList().block();
 		assertThat(responses).isNotEmpty();
@@ -125,7 +124,7 @@ public class OllamaChatModelObservationIT extends BaseOllamaIT {
 	}
 
 	private void validate(ChatResponseMetadata responseMetadata) {
-		TestObservationRegistryAssert.assertThat(observationRegistry)
+		TestObservationRegistryAssert.assertThat(this.observationRegistry)
 			.doesNotHaveAnyRemainingCurrentObservation()
 			.hasObservationWithNameEqualTo(DefaultChatModelObservationConvention.DEFAULT_NAME)
 			.that()
@@ -165,13 +164,15 @@ public class OllamaChatModelObservationIT extends BaseOllamaIT {
 
 		@Bean
 		public OllamaApi openAiApi() {
-			return buildOllamaApiWithModel(MODEL);
+			return initializeOllama(MODEL);
 		}
 
 		@Bean
-		public OllamaChatModel openAiChatModel(OllamaApi openAiApi, TestObservationRegistry observationRegistry) {
-			return new OllamaChatModel(openAiApi, OllamaOptions.create(), new FunctionCallbackContext(), List.of(),
-					observationRegistry);
+		public OllamaChatModel openAiChatModel(OllamaApi ollamaApi, TestObservationRegistry observationRegistry) {
+			return OllamaChatModel.builder()
+				.withOllamaApi(ollamaApi)
+				.withObservationRegistry(observationRegistry)
+				.build();
 		}
 
 	}

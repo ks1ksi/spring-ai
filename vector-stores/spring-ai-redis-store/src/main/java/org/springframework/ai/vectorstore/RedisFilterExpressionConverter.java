@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
 
 import java.text.MessageFormat;
@@ -139,33 +140,24 @@ public class RedisFilterExpressionConverter extends AbstractFilterExpressionConv
 	}
 
 	private String tagValueDelimiter(Expression expression) {
-		switch (expression.type()) {
-			case IN:
-				return " | ";
-			case EQ:
-				return " ";
-			default:
-				throw new UnsupportedOperationException(
-						MessageFormat.format("Tag operand {0} not supported", expression.type()));
-		}
+		return switch (expression.type()) {
+			case IN -> " | ";
+			case EQ -> " ";
+			default -> throw new UnsupportedOperationException(
+					MessageFormat.format("Tag operand {0} not supported", expression.type()));
+		};
 	}
 
 	private Numeric numeric(Expression expression, Value value) {
-		switch (expression.type()) {
-			case EQ:
-				return new Numeric(inclusive(value), inclusive(value));
-			case GT:
-				return new Numeric(exclusive(value), POSITIVE_INFINITY);
-			case GTE:
-				return new Numeric(inclusive(value), POSITIVE_INFINITY);
-			case LT:
-				return new Numeric(NEGATIVE_INFINITY, exclusive(value));
-			case LTE:
-				return new Numeric(NEGATIVE_INFINITY, inclusive(value));
-			default:
-				throw new UnsupportedOperationException(MessageFormat
-					.format("Expression type {0} not supported for numeric fields", expression.type()));
-		}
+		return switch (expression.type()) {
+			case EQ -> new Numeric(inclusive(value), inclusive(value));
+			case GT -> new Numeric(exclusive(value), POSITIVE_INFINITY);
+			case GTE -> new Numeric(inclusive(value), POSITIVE_INFINITY);
+			case LT -> new Numeric(NEGATIVE_INFINITY, exclusive(value));
+			case LTE -> new Numeric(NEGATIVE_INFINITY, inclusive(value));
+			default -> throw new UnsupportedOperationException(
+					MessageFormat.format("Expression type {0} not supported for numeric fields", expression.type()));
+		};
 	}
 
 	private NumericBoundary inclusive(Value value) {
@@ -177,6 +169,7 @@ public class RedisFilterExpressionConverter extends AbstractFilterExpressionConv
 	}
 
 	static record Numeric(NumericBoundary lower, NumericBoundary upper) {
+
 	}
 
 	static record NumericBoundary(Object value, boolean exclusive) {
@@ -197,11 +190,11 @@ public class RedisFilterExpressionConverter extends AbstractFilterExpressionConv
 			if (this == POSITIVE_INFINITY) {
 				return INFINITY;
 			}
-			return String.format(formatString(), value);
+			return String.format(formatString(), this.value);
 		}
 
 		private String formatString() {
-			if (exclusive) {
+			if (this.exclusive) {
 				return EXCLUSIVE_FORMAT;
 			}
 			return INCLUSIVE_FORMAT;

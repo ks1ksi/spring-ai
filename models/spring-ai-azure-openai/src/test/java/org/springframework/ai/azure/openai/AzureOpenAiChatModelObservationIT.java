@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,17 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.springframework.ai.azure.openai;
 
-import static com.azure.core.http.policy.HttpLogDetailLevel.BODY_AND_HEADERS;
-import static org.assertj.core.api.Assertions.assertThat;
+package org.springframework.ai.azure.openai;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.azure.ai.openai.OpenAIClientBuilder;
+import com.azure.ai.openai.OpenAIServiceVersion;
+import com.azure.core.credential.AzureKeyCredential;
+import com.azure.core.http.policy.HttpLogOptions;
+import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import reactor.core.publisher.Flux;
 
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -37,31 +41,24 @@ import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 
-import com.azure.ai.openai.OpenAIClientBuilder;
-import com.azure.ai.openai.OpenAIServiceVersion;
-import com.azure.core.credential.AzureKeyCredential;
-import com.azure.core.http.policy.HttpLogOptions;
-import io.micrometer.observation.tck.TestObservationRegistry;
-import io.micrometer.observation.tck.TestObservationRegistryAssert;
-import reactor.core.publisher.Flux;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Soby Chacko
  */
 @SpringBootTest(classes = AzureOpenAiChatModelObservationIT.TestConfiguration.class)
-@EnabledIfEnvironmentVariable(named = "AZURE_OPENAI_API_KEY", matches = ".+")
-@EnabledIfEnvironmentVariable(named = "AZURE_OPENAI_ENDPOINT", matches = ".+")
+@RequiresAzureCredentials
 class AzureOpenAiChatModelObservationIT {
-
-	@Autowired
-	private AzureOpenAiChatModel chatModel;
 
 	@Autowired
 	TestObservationRegistry observationRegistry;
 
+	@Autowired
+	private AzureOpenAiChatModel chatModel;
+
 	@BeforeEach
 	void beforeEach() {
-		observationRegistry.clear();
+		this.observationRegistry.clear();
 	}
 
 	@Test
@@ -78,7 +75,7 @@ class AzureOpenAiChatModelObservationIT {
 
 		Prompt prompt = new Prompt("Why does a raven look like a desk?", options);
 
-		ChatResponse chatResponse = chatModel.call(prompt);
+		ChatResponse chatResponse = this.chatModel.call(prompt);
 		assertThat(chatResponse.getResult().getOutput().getContent()).isNotEmpty();
 
 		ChatResponseMetadata responseMetadata = chatResponse.getMetadata();
@@ -102,7 +99,7 @@ class AzureOpenAiChatModelObservationIT {
 
 		Prompt prompt = new Prompt("Why does a raven look like a desk?", options);
 
-		Flux<ChatResponse> chatResponseFlux = chatModel.stream(prompt);
+		Flux<ChatResponse> chatResponseFlux = this.chatModel.stream(prompt);
 		List<ChatResponse> responses = chatResponseFlux.collectList().block();
 		assertThat(responses).isNotEmpty();
 		assertThat(responses).hasSizeGreaterThan(10);
@@ -123,7 +120,7 @@ class AzureOpenAiChatModelObservationIT {
 
 	private void validate(ChatResponseMetadata responseMetadata, boolean checkModel) {
 
-		TestObservationRegistryAssert.That that = TestObservationRegistryAssert.assertThat(observationRegistry)
+		TestObservationRegistryAssert.That that = TestObservationRegistryAssert.assertThat(this.observationRegistry)
 			.doesNotHaveAnyRemainingCurrentObservation()
 			.hasObservationWithNameEqualTo(DefaultChatModelObservationConvention.DEFAULT_NAME);
 
@@ -190,7 +187,8 @@ class AzureOpenAiChatModelObservationIT {
 			return new OpenAIClientBuilder().credential(new AzureKeyCredential(System.getenv("AZURE_OPENAI_API_KEY")))
 				.endpoint(System.getenv("AZURE_OPENAI_ENDPOINT"))
 				.serviceVersion(OpenAIServiceVersion.V2024_02_15_PREVIEW)
-				.httpLogOptions(new HttpLogOptions().setLogLevel(BODY_AND_HEADERS));
+				.httpLogOptions(new HttpLogOptions()
+					.setLogLevel(com.azure.core.http.policy.HttpLogDetailLevel.BODY_AND_HEADERS));
 		}
 
 		@Bean

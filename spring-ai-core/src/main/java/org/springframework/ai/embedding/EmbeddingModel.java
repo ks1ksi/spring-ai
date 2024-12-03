@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,14 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.embedding;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.model.Model;
 import org.springframework.util.Assert;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * EmbeddingModel is a generic interface for embedding models.
@@ -29,6 +30,7 @@ import java.util.List;
  * @author Christian Tzolov
  * @author Josh Long
  * @author Soby Chacko
+ * @author Jihoon Kim
  * @since 1.0.0
  *
  */
@@ -58,7 +60,7 @@ public interface EmbeddingModel extends Model<EmbeddingRequest, EmbeddingRespons
 	/**
 	 * Embeds a batch of texts into vectors.
 	 * @param texts list of texts to embed.
-	 * @return list of list of embedded vectors.
+	 * @return list of embedded vectors.
 	 */
 	default List<float[]> embed(List<String> texts) {
 		Assert.notNull(texts, "Texts must not be null");
@@ -109,8 +111,11 @@ public interface EmbeddingModel extends Model<EmbeddingRequest, EmbeddingRespons
 	}
 
 	/**
-	 * @return the number of dimensions of the embedded vectors. It is generative
-	 * specific.
+	 * Get the number of dimensions of the embedded vectors. Note that by default, this
+	 * method will call the remote Embedding endpoint to get the dimensions of the
+	 * embedded vectors. If the dimensions are known ahead of time, it is recommended to
+	 * override this method.
+	 * @return the number of dimensions of the embedded vectors.
 	 */
 	default int dimensions() {
 		return embed("Test String").length;

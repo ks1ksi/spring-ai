@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,11 +16,16 @@
 
 package org.springframework.ai.ollama.api.tool;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.ai.ollama.BaseOllamaIT;
 import org.springframework.ai.ollama.api.OllamaApi;
@@ -28,13 +33,6 @@ import org.springframework.ai.ollama.api.OllamaApi.ChatResponse;
 import org.springframework.ai.ollama.api.OllamaApi.Message;
 import org.springframework.ai.ollama.api.OllamaApi.Message.Role;
 import org.springframework.ai.ollama.api.OllamaApi.Message.ToolCall;
-import org.springframework.ai.ollama.api.OllamaModel;
-import org.testcontainers.junit.jupiter.Testcontainers;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -42,21 +40,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Christian Tzolov
  * @author Thomas Vitale
  */
-@Testcontainers
-@DisabledIf("isDisabled")
 public class OllamaApiToolFunctionCallIT extends BaseOllamaIT {
 
-	private static final String MODEL = OllamaModel.LLAMA3_1.getName();
+	private static final String MODEL = "qwen2.5:3b";
 
 	private static final Logger logger = LoggerFactory.getLogger(OllamaApiToolFunctionCallIT.class);
 
-	MockWeatherService weatherService = new MockWeatherService();
-
 	static OllamaApi ollamaApi;
+
+	MockWeatherService weatherService = new MockWeatherService();
 
 	@BeforeAll
 	public static void beforeAll() throws IOException, InterruptedException {
-		ollamaApi = buildOllamaApiWithModel(MODEL);
+		ollamaApi = initializeOllama(MODEL);
 	}
 
 	@SuppressWarnings("null")
@@ -64,11 +60,13 @@ public class OllamaApiToolFunctionCallIT extends BaseOllamaIT {
 	public void toolFunctionCall() {
 		// Step 1: send the conversation and available functions to the model
 		var message = Message.builder(Role.USER)
-			.withContent("What's the weather like in San Francisco, Tokyo, and Paris? Return temperature in Celsius.")
+			.withContent(
+					"What's the weather like in San Francisco, Tokyo, and Paris? Return a list with the temperature in Celsius for each of the three locations.")
 			.build();
 
 		var functionTool = new OllamaApi.ChatRequest.Tool(new OllamaApi.ChatRequest.Tool.Function("getCurrentWeather",
-				"Get the weather in location like city names.", ModelOptionsUtils.jsonToMap("""
+				"Find the current weather conditions, forecasts, and temperatures for a location, like a city or state.",
+				ModelOptionsUtils.jsonToMap("""
 						{
 							"type": "object",
 							"properties": {
@@ -115,7 +113,7 @@ public class OllamaApiToolFunctionCallIT extends BaseOllamaIT {
 				MockWeatherService.Request weatherRequest = ModelOptionsUtils.mapToClass(responseMap,
 						MockWeatherService.Request.class);
 
-				MockWeatherService.Response weatherResponse = weatherService.apply(weatherRequest);
+				MockWeatherService.Response weatherResponse = this.weatherService.apply(weatherRequest);
 
 				// extend conversation with function response.
 				messages.add(Message.builder(Role.TOOL)

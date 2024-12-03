@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.embedding;
 
 import java.util.ArrayList;
@@ -20,13 +21,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.knuddels.jtokkit.api.EncodingType;
+
 import org.springframework.ai.document.ContentFormatter;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.tokenizer.JTokkitTokenCountEstimator;
 import org.springframework.ai.tokenizer.TokenCountEstimator;
-
-import com.knuddels.jtokkit.api.EncodingType;
 import org.springframework.util.Assert;
 
 /**
@@ -48,6 +49,7 @@ import org.springframework.util.Assert;
  * @author Soby Chacko
  * @author Mark Pollack
  * @author Laura Trotta
+ * @author Jihoon Kim
  * @since 1.0.0
  */
 public class TokenCountBatchingStrategy implements BatchingStrategy {
@@ -67,7 +69,7 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
 
 	private final int maxInputTokenCount;
 
-	private final ContentFormatter contentFormater;
+	private final ContentFormatter contentFormatter;
 
 	private final MetadataMode metadataMode;
 
@@ -77,12 +79,13 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
 
 	/**
 	 * @param encodingType {@link EncodingType}
-	 * @param thresholdFactor the threshold factor to use on top of the max input token
-	 * count
 	 * @param maxInputTokenCount upper limit for input tokens
+	 * @param reservePercentage the percentage of tokens to reserve from the max input
+	 * token count to create a buffer.
 	 */
-	public TokenCountBatchingStrategy(EncodingType encodingType, int maxInputTokenCount, double thresholdFactor) {
-		this(encodingType, maxInputTokenCount, thresholdFactor, Document.DEFAULT_CONTENT_FORMATTER, MetadataMode.NONE);
+	public TokenCountBatchingStrategy(EncodingType encodingType, int maxInputTokenCount, double reservePercentage) {
+		this(encodingType, maxInputTokenCount, reservePercentage, Document.DEFAULT_CONTENT_FORMATTER,
+				MetadataMode.NONE);
 	}
 
 	/**
@@ -98,11 +101,13 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
 	public TokenCountBatchingStrategy(EncodingType encodingType, int maxInputTokenCount, double reservePercentage,
 			ContentFormatter contentFormatter, MetadataMode metadataMode) {
 		Assert.notNull(encodingType, "EncodingType must not be null");
+		Assert.isTrue(maxInputTokenCount > 0, "MaxInputTokenCount must be greater than 0");
+		Assert.isTrue(reservePercentage >= 0 && reservePercentage < 1, "ReservePercentage must be in range [0, 1)");
 		Assert.notNull(contentFormatter, "ContentFormatter must not be null");
 		Assert.notNull(metadataMode, "MetadataMode must not be null");
 		this.tokenCountEstimator = new JTokkitTokenCountEstimator(encodingType);
 		this.maxInputTokenCount = (int) Math.round(maxInputTokenCount * (1 - reservePercentage));
-		this.contentFormater = contentFormatter;
+		this.contentFormatter = contentFormatter;
 		this.metadataMode = metadataMode;
 	}
 
@@ -119,9 +124,13 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
 	public TokenCountBatchingStrategy(TokenCountEstimator tokenCountEstimator, int maxInputTokenCount,
 			double reservePercentage, ContentFormatter contentFormatter, MetadataMode metadataMode) {
 		Assert.notNull(tokenCountEstimator, "TokenCountEstimator must not be null");
+		Assert.isTrue(maxInputTokenCount > 0, "MaxInputTokenCount must be greater than 0");
+		Assert.isTrue(reservePercentage >= 0 && reservePercentage < 1, "ReservePercentage must be in range [0, 1)");
+		Assert.notNull(contentFormatter, "ContentFormatter must not be null");
+		Assert.notNull(metadataMode, "MetadataMode must not be null");
 		this.tokenCountEstimator = tokenCountEstimator;
 		this.maxInputTokenCount = (int) Math.round(maxInputTokenCount * (1 - reservePercentage));
-		this.contentFormater = contentFormatter;
+		this.contentFormatter = contentFormatter;
 		this.metadataMode = metadataMode;
 	}
 
@@ -134,7 +143,7 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
 
 		for (Document document : documents) {
 			int tokenCount = this.tokenCountEstimator
-				.estimate(document.getFormattedContent(this.contentFormater, this.metadataMode));
+				.estimate(document.getFormattedContent(this.contentFormatter, this.metadataMode));
 			if (tokenCount > this.maxInputTokenCount) {
 				throw new IllegalArgumentException(
 						"Tokens in a single document exceeds the maximum number of allowed input tokens");
@@ -144,7 +153,7 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
 
 		for (Document document : documentTokens.keySet()) {
 			Integer tokenCount = documentTokens.get(document);
-			if (currentSize + tokenCount > maxInputTokenCount) {
+			if (currentSize + tokenCount > this.maxInputTokenCount) {
 				batches.add(currentBatch);
 				currentBatch = new ArrayList<>();
 				currentSize = 0;

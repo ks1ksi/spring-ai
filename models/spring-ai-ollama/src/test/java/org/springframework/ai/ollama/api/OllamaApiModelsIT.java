@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,16 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.ollama.api;
+
+import java.io.IOException;
+import java.time.Duration;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIf;
+
 import org.springframework.ai.ollama.BaseOllamaIT;
 import org.springframework.http.HttpStatus;
-import org.testcontainers.junit.jupiter.Testcontainers;
-
-import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,17 +32,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author Thomas Vitale
  */
-@Testcontainers
-@DisabledIf("isDisabled")
 public class OllamaApiModelsIT extends BaseOllamaIT {
 
-	private static final String MODEL = OllamaModel.NOMIC_EMBED_TEXT.getName();
+	private static final String MODEL = "all-minilm";
 
 	static OllamaApi ollamaApi;
 
 	@BeforeAll
 	public static void beforeAll() throws IOException, InterruptedException {
-		ollamaApi = buildOllamaApiWithModel(MODEL);
+		ollamaApi = initializeOllama(MODEL);
 	}
 
 	@Test
@@ -59,7 +58,7 @@ public class OllamaApiModelsIT extends BaseOllamaIT {
 		var showModelResponse = ollamaApi.showModel(showModelRequest);
 
 		assertThat(showModelResponse).isNotNull();
-		assertThat(showModelResponse.details().family()).isEqualTo("nomic-bert");
+		assertThat(showModelResponse.details().family()).isEqualTo("bert");
 	}
 
 	@Test
@@ -84,8 +83,14 @@ public class OllamaApiModelsIT extends BaseOllamaIT {
 		assertThat(listModelResponse.models().stream().anyMatch(model -> model.name().contains(MODEL))).isFalse();
 
 		var pullModelRequest = new OllamaApi.PullModelRequest(MODEL);
-		var progressResponse = ollamaApi.pullModel(pullModelRequest);
-		assertThat(progressResponse.status()).contains("success");
+		var progressResponses = ollamaApi.pullModel(pullModelRequest)
+			.timeout(Duration.ofMinutes(5))
+			.collectList()
+			.block();
+
+		assertThat(progressResponses).isNotNull();
+		assertThat(progressResponses.get(progressResponses.size() - 1))
+			.isEqualTo(new OllamaApi.ProgressResponse("success", null, null, null));
 
 		listModelResponse = ollamaApi.listModels();
 		assertThat(listModelResponse.models().stream().anyMatch(model -> model.name().contains(MODEL))).isTrue();

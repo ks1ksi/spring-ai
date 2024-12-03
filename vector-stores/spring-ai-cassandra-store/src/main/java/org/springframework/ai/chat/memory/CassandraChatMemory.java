@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.chat.memory;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.datastax.oss.driver.api.core.cql.BoundStatementBuilder;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
@@ -31,18 +37,13 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
-
 /**
  * Create a CassandraChatMemory like <code>
-CassandraChatMemory.create(CassandraChatMemoryConfig.builder().withTimeToLive(Duration.ofDays(1)).build());
-</code>
+ CassandraChatMemory.create(CassandraChatMemoryConfig.builder().withTimeToLive(Duration.ofDays(1)).build());
+ </code>
  *
  * For example @see org.springframework.ai.chat.memory.CassandraChatMemory
- * 
+ *
  * @author Mick Semb Wever
  * @since 1.0.0
  */
@@ -52,11 +53,13 @@ public final class CassandraChatMemory implements ChatMemory {
 
 	final CassandraChatMemoryConfig conf;
 
-	private final PreparedStatement addUserStmt, addAssistantStmt, getStmt, deleteStmt;
+	private final PreparedStatement addUserStmt;
 
-	public static CassandraChatMemory create(CassandraChatMemoryConfig conf) {
-		return new CassandraChatMemory(conf);
-	}
+	private final PreparedStatement addAssistantStmt;
+
+	private final PreparedStatement getStmt;
+
+	private final PreparedStatement deleteStmt;
 
 	public CassandraChatMemory(CassandraChatMemoryConfig config) {
 		this.conf = config;
@@ -67,10 +70,14 @@ public final class CassandraChatMemory implements ChatMemory {
 		this.deleteStmt = prepareDeleteStmt();
 	}
 
+	public static CassandraChatMemory create(CassandraChatMemoryConfig conf) {
+		return new CassandraChatMemory(conf);
+	}
+
 	@Override
 	public void add(String conversationId, List<Message> messages) {
 		final AtomicLong instantSeq = new AtomicLong(Instant.now().toEpochMilli());
-		messages.forEach((msg) -> {
+		messages.forEach(msg -> {
 			if (msg.getMetadata().containsKey(CONVERSATION_TS)) {
 				msg.getMetadata().put(CONVERSATION_TS, Instant.ofEpochMilli(instantSeq.getAndIncrement()));
 			}
@@ -88,12 +95,7 @@ public final class CassandraChatMemory implements ChatMemory {
 
 		msg.getMetadata().putIfAbsent(CONVERSATION_TS, Instant.now());
 
-		PreparedStatement stmt;
-		switch (msg.getMessageType()) {
-			case USER -> stmt = addUserStmt;
-			case ASSISTANT -> stmt = addAssistantStmt;
-			default -> throw new IllegalArgumentException("Cant add type " + msg);
-		}
+		PreparedStatement stmt = getStatement(msg);
 
 		List<Object> primaryKeys = this.conf.primaryKeyTranslator.apply(sessionId);
 		BoundStatementBuilder builder = stmt.boundStatementBuilder();
@@ -111,11 +113,19 @@ public final class CassandraChatMemory implements ChatMemory {
 		this.conf.session.execute(builder.build());
 	}
 
+	PreparedStatement getStatement(Message msg) {
+		return switch (msg.getMessageType()) {
+			case USER -> this.addUserStmt;
+			case ASSISTANT -> this.addAssistantStmt;
+			default -> throw new IllegalArgumentException("Cant add type " + msg);
+		};
+	}
+
 	@Override
 	public void clear(String sessionId) {
 
 		List<Object> primaryKeys = this.conf.primaryKeyTranslator.apply(sessionId);
-		BoundStatementBuilder builder = deleteStmt.boundStatementBuilder();
+		BoundStatementBuilder builder = this.deleteStmt.boundStatementBuilder();
 
 		for (int k = 0; k < primaryKeys.size(); ++k) {
 			SchemaColumn keyColumn = this.conf.getPrimaryKeyColumn(k);
@@ -129,7 +139,7 @@ public final class CassandraChatMemory implements ChatMemory {
 	public List<Message> get(String sessionId, int lastN) {
 
 		List<Object> primaryKeys = this.conf.primaryKeyTranslator.apply(sessionId);
-		BoundStatementBuilder builder = getStmt.boundStatementBuilder().setInt("lastN", lastN);
+		BoundStatementBuilder builder = this.getStmt.boundStatementBuilder().setInt("lastN", lastN);
 
 		for (int k = 0; k < primaryKeys.size(); ++k) {
 			SchemaColumn keyColumn = this.conf.getPrimaryKeyColumn(k);

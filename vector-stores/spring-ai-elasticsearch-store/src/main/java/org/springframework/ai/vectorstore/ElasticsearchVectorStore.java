@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,9 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.springframework.ai.vectorstore;
 
-import static java.lang.Math.sqrt;
+package org.springframework.ai.vectorstore;
 
 import java.io.IOException;
 import java.util.List;
@@ -24,11 +23,24 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
+import co.elastic.clients.elasticsearch.core.BulkResponse;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.Version;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.ObservationRegistry;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.ai.document.Document;
+import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.BatchingStrategy;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
@@ -44,19 +56,6 @@ import org.springframework.ai.vectorstore.observation.VectorStoreObservationCont
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
-
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch.core.BulkRequest;
-import co.elastic.clients.elasticsearch.core.BulkResponse;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
-import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.json.jackson.JacksonJsonpMapper;
-import co.elastic.clients.transport.rest_client.RestClientTransport;
-import io.micrometer.observation.ObservationRegistry;
 
 /**
  * The ElasticsearchVectorStore class implements the VectorStore interface and provides
@@ -78,6 +77,10 @@ import io.micrometer.observation.ObservationRegistry;
 public class ElasticsearchVectorStore extends AbstractObservationVectorStore implements InitializingBean {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchVectorStore.class);
+
+	private static Map<SimilarityFunction, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(
+			SimilarityFunction.cosine, VectorStoreSimilarityMetric.COSINE, SimilarityFunction.l2_norm,
+			VectorStoreSimilarityMetric.EUCLIDEAN, SimilarityFunction.dot_product, VectorStoreSimilarityMetric.DOT);
 
 	private final EmbeddingModel embeddingModel;
 
@@ -176,14 +179,14 @@ public class ElasticsearchVectorStore extends AbstractObservationVectorStore imp
 		try {
 			float threshold = (float) searchRequest.getSimilarityThreshold();
 			// reverting l2_norm distance to its original value
-			if (options.getSimilarity().equals(SimilarityFunction.l2_norm)) {
+			if (this.options.getSimilarity().equals(SimilarityFunction.l2_norm)) {
 				threshold = 1 - threshold;
 			}
 			final float finalThreshold = threshold;
 			float[] vectors = this.embeddingModel.embed(searchRequest.getQuery());
 
-			SearchResponse<Document> res = elasticsearchClient.search(
-					sr -> sr.index(options.getIndexName())
+			SearchResponse<Document> res = this.elasticsearchClient.search(
+					sr -> sr.index(this.options.getIndexName())
 						.knn(knn -> knn.queryVector(EmbeddingUtils.toList(vectors))
 							.similarity(finalThreshold)
 							.k((long) searchRequest.getTopK())
@@ -208,20 +211,24 @@ public class ElasticsearchVectorStore extends AbstractObservationVectorStore imp
 
 	private Document toDocument(Hit<Document> hit) {
 		Document document = hit.source();
-		document.getMetadata().put("distance", calculateDistance(hit.score().floatValue()));
-		return document;
+		Document.Builder documentBuilder = document.mutate();
+		if (hit.score() != null) {
+			documentBuilder.metadata(DocumentMetadata.DISTANCE.value(), 1 - normalizeSimilarityScore(hit.score()));
+			documentBuilder.score(normalizeSimilarityScore(hit.score()));
+		}
+		return documentBuilder.build();
 	}
 
 	// more info on score/distance calculation
 	// https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html#knn-similarity-search
-	private float calculateDistance(Float score) {
-		switch (options.getSimilarity()) {
+	private double normalizeSimilarityScore(double score) {
+		switch (this.options.getSimilarity()) {
 			case l2_norm:
 				// the returned value of l2_norm is the opposite of the other functions
 				// (closest to zero means more accurate), so to make it consistent
 				// with the other functions the reverse is returned applying a "1-"
 				// to the standard transformation
-				return (float) (1 - (sqrt((1 / score) - 1)));
+				return (1 - (java.lang.Math.sqrt((1 / score) - 1)));
 			// cosine and dot_product
 			default:
 				return (2 * score) - 1;
@@ -230,7 +237,7 @@ public class ElasticsearchVectorStore extends AbstractObservationVectorStore imp
 
 	public boolean indexExists() {
 		try {
-			return this.elasticsearchClient.indices().exists(ex -> ex.index(options.getIndexName())).value();
+			return this.elasticsearchClient.indices().exists(ex -> ex.index(this.options.getIndexName())).value();
 		}
 		catch (IOException e) {
 			throw new RuntimeException(e);
@@ -240,9 +247,10 @@ public class ElasticsearchVectorStore extends AbstractObservationVectorStore imp
 	private void createIndexMapping() {
 		try {
 			this.elasticsearchClient.indices()
-				.create(cr -> cr.index(options.getIndexName())
-					.mappings(map -> map.properties("embedding", p -> p.denseVector(
-							dv -> dv.similarity(options.getSimilarity().toString()).dims(options.getDimensions())))));
+				.create(cr -> cr.index(this.options.getIndexName())
+					.mappings(map -> map.properties("embedding",
+							p -> p.denseVector(dv -> dv.similarity(this.options.getSimilarity().toString())
+								.dims(this.options.getDimensions())))));
 		}
 		catch (IOException e) {
 			throw new RuntimeException(e);
@@ -266,10 +274,6 @@ public class ElasticsearchVectorStore extends AbstractObservationVectorStore imp
 			.withDimensions(this.embeddingModel.dimensions())
 			.withSimilarityMetric(getSimilarityMetric());
 	}
-
-	private static Map<SimilarityFunction, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(
-			SimilarityFunction.cosine, VectorStoreSimilarityMetric.COSINE, SimilarityFunction.l2_norm,
-			VectorStoreSimilarityMetric.EUCLIDEAN, SimilarityFunction.dot_product, VectorStoreSimilarityMetric.DOT);
 
 	private String getSimilarityMetric() {
 		if (!SIMILARITY_TYPE_MAPPING.containsKey(this.options.getSimilarity())) {

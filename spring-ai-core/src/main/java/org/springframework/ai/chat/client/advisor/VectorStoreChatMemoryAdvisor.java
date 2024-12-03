@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,13 @@
 
 package org.springframework.ai.chat.client.advisor;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import reactor.core.publisher.Flux;
 
 import org.springframework.ai.chat.client.advisor.api.AdvisedRequest;
 import org.springframework.ai.chat.client.advisor.api.AdvisedResponse;
@@ -35,13 +38,13 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.model.Content;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-
-import reactor.core.publisher.Flux;
+import org.springframework.util.StringUtils;
 
 /**
  * Memory is retrieved from a VectorStore added into the prompt's system text.
  *
  * @author Christian Tzolov
+ * @author Thomas Vitale
  * @since 1.0.0
  */
 public class VectorStoreChatMemoryAdvisor extends AbstractChatMemoryAdvisor<VectorStore> {
@@ -58,7 +61,6 @@ public class VectorStoreChatMemoryAdvisor extends AbstractChatMemoryAdvisor<Vect
 			LONG_TERM_MEMORY:
 			{long_term_memory}
 			---------------------
-
 			""";
 
 	private final String systemTextAdvise;
@@ -99,6 +101,10 @@ public class VectorStoreChatMemoryAdvisor extends AbstractChatMemoryAdvisor<Vect
 		this.systemTextAdvise = systemTextAdvise;
 	}
 
+	public static Builder builder(VectorStore chatMemory) {
+		return new Builder(chatMemory);
+	}
+
 	@Override
 	public AdvisedResponse aroundCall(AdvisedRequest advisedRequest, CallAroundAdvisorChain chain) {
 
@@ -124,7 +130,13 @@ public class VectorStoreChatMemoryAdvisor extends AbstractChatMemoryAdvisor<Vect
 
 	private AdvisedRequest before(AdvisedRequest request) {
 
-		String advisedSystemText = request.systemText() + System.lineSeparator() + this.systemTextAdvise;
+		String advisedSystemText;
+		if (StringUtils.hasText(request.systemText())) {
+			advisedSystemText = request.systemText() + System.lineSeparator() + this.systemTextAdvise;
+		}
+		else {
+			advisedSystemText = this.systemTextAdvise;
+		}
 
 		var searchRequest = SearchRequest.query(request.userText())
 			.withTopK(this.doGetChatMemoryRetrieveSize(request.adviseContext()))
@@ -173,20 +185,20 @@ public class VectorStoreChatMemoryAdvisor extends AbstractChatMemoryAdvisor<Vect
 				metadata.put(DOCUMENT_METADATA_CONVERSATION_ID, conversationId);
 				metadata.put(DOCUMENT_METADATA_MESSAGE_TYPE, message.getMessageType().name());
 				if (message instanceof UserMessage userMessage) {
-					return new Document(userMessage.getContent(), userMessage.getMedia(), metadata);
+					return Document.builder()
+						.content(userMessage.getContent())
+						.media(new ArrayList<>(userMessage.getMedia()))
+						.metadata(metadata)
+						.build();
 				}
 				else if (message instanceof AssistantMessage assistantMessage) {
-					return new Document(assistantMessage.getContent(), metadata);
+					return Document.builder().content(assistantMessage.getContent()).metadata(metadata).build();
 				}
 				throw new RuntimeException("Unknown message type: " + message.getMessageType());
 			})
 			.toList();
 
 		return docs;
-	}
-
-	public static Builder builder(VectorStore chatMemory) {
-		return new Builder(chatMemory);
 	}
 
 	public static class Builder extends AbstractChatMemoryAdvisor.AbstractBuilder<VectorStore> {

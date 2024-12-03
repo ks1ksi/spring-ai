@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,10 +19,16 @@ package org.springframework.ai.vertexai.gemini.common;
 import org.springframework.ai.observation.conventions.AiProvider;
 
 /**
+ * Constants for Vertex AI Gemini.
+ *
  * @author Soby Chacko
  */
-public class VertexAiGeminiConstants {
+public final class VertexAiGeminiConstants {
 
 	public static final String PROVIDER_NAME = AiProvider.VERTEX_AI.value();
+
+	private VertexAiGeminiConstants() {
+
+	}
 
 }

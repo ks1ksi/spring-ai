@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,9 @@
  */
 
 package org.springframework.ai.autoconfigure.vectorstore.chroma;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.ObservationRegistry;
 
 import org.springframework.ai.chroma.ChromaApi;
 import org.springframework.ai.embedding.BatchingStrategy;
@@ -31,14 +34,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import io.micrometer.observation.ObservationRegistry;
-
 /**
+ * {@link AutoConfiguration Auto-configuration} for Chroma Vector Store.
+ *
  * @author Christian Tzolov
  * @author Eddú Meléndez
  * @author Soby Chacko
+ * @author Sebastien Deleuze
  */
 @AutoConfiguration
 @ConditionalOnClass({ EmbeddingModel.class, RestClient.class, ChromaVectorStore.class, ObjectMapper.class })
@@ -54,12 +56,13 @@ public class ChromaVectorStoreAutoConfiguration {
 	@Bean
 	@ConditionalOnMissingBean
 	public ChromaApi chromaApi(ChromaApiProperties apiProperties,
-			ObjectProvider<RestClient.Builder> restClientBuilderProvider, ChromaConnectionDetails connectionDetails) {
+			ObjectProvider<RestClient.Builder> restClientBuilderProvider, ChromaConnectionDetails connectionDetails,
+			ObjectMapper objectMapper) {
 
 		String chromaUrl = String.format("%s:%s", connectionDetails.getHost(), connectionDetails.getPort());
 
 		var chromaApi = new ChromaApi(chromaUrl, restClientBuilderProvider.getIfAvailable(RestClient::builder),
-				new ObjectMapper());
+				objectMapper);
 
 		if (StringUtils.hasText(connectionDetails.getKeyToken())) {
 			chromaApi.withKeyToken(connectionDetails.getKeyToken());

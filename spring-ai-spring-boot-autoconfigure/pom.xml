@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xmlns="http://maven.apache.org/POM/4.0.0"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.springframework.ai</groupId>
@@ -19,6 +19,9 @@
 		<connection>git://github.com/spring-projects/spring-ai.git</connection>
 		<developerConnection>git@github.com:spring-projects/spring-ai.git</developerConnection>
 	</scm>
+
+	<properties>
+	</properties>
 
 	<dependencies>
 
@@ -175,6 +178,20 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- MariaDB Vector Store-->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-mariadb-store</artifactId>
+			<version>${project.parent.version}</version>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.mariadb.jdbc</groupId>
+			<artifactId>mariadb-java-client</artifactId>
+			<version>${mariadb.version}</version>
+			<optional>true</optional>
+		</dependency>
+
 		<!-- Chroma Vector Store -->
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
@@ -229,14 +246,6 @@
 			<optional>true</optional>
 		</dependency>
 
-		<!-- Vertex AI PaLM2 -->
-		<dependency>
-			<groupId>org.springframework.ai</groupId>
-			<artifactId>spring-ai-vertex-ai-palm2</artifactId>
-			<version>${project.parent.version}</version>
-			<optional>true</optional>
-		</dependency>
-
 		<!-- Vertex AI Embedding -->
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
@@ -273,6 +282,14 @@
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-bedrock</artifactId>
+			<version>${project.parent.version}</version>
+			<optional>true</optional>
+		</dependency>
+
+		<!-- Bedrock  Converse -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-bedrock-converse</artifactId>
 			<version>${project.parent.version}</version>
 			<optional>true</optional>
 		</dependency>
@@ -387,12 +404,27 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- Azure Cosmos DB vector store -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-azure-cosmos-db-store</artifactId>
+			<version>${project.parent.version}</version>
+			<optional>true</optional>
+		</dependency>
+
 		<!-- test dependencies -->
 
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-test</artifactId>
 			<version>${project.parent.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>com.oracle.oci.sdk</groupId>
+			<artifactId>oci-java-sdk-common</artifactId>
+			<version>${oci-sdk-version}</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -435,9 +467,15 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>oracle-free</artifactId>
-			<version>1.19.8</version>
+			<version>${oracle.free.version}</version>
 			<scope>test</scope>
-    </dependency>
+		</dependency>
+
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>mariadb</artifactId>
+			<scope>test</scope>
+		</dependency>
 
 		<dependency>
 			<groupId>org.testcontainers</groupId>
@@ -448,12 +486,6 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>cassandra</artifactId>
-			<scope>test</scope>
-		</dependency>
-
-		<dependency>
-			<groupId>org.testcontainers</groupId>
-			<artifactId>oracle-free</artifactId>
 			<scope>test</scope>
 		</dependency>
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,42 +13,80 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.chat.prompt;
+
+import java.util.List;
 
 import org.springframework.ai.model.ModelOptions;
 import org.springframework.lang.Nullable;
 
-import java.util.List;
-
 /**
- * The ChatOptions represent the common options, portable across different chat models.
+ * {@link ModelOptions} representing the common options that are portable across different
+ * chat models.
  */
 public interface ChatOptions extends ModelOptions {
 
+	/**
+	 * Returns the model to use for the chat.
+	 * @return the model to use for the chat
+	 */
 	@Nullable
 	String getModel();
 
+	/**
+	 * Returns the frequency penalty to use for the chat.
+	 * @return the frequency penalty to use for the chat
+	 */
 	@Nullable
 	Double getFrequencyPenalty();
 
+	/**
+	 * Returns the maximum number of tokens to use for the chat.
+	 * @return the maximum number of tokens to use for the chat
+	 */
 	@Nullable
 	Integer getMaxTokens();
 
+	/**
+	 * Returns the presence penalty to use for the chat.
+	 * @return the presence penalty to use for the chat
+	 */
 	@Nullable
 	Double getPresencePenalty();
 
+	/**
+	 * Returns the stop sequences to use for the chat.
+	 * @return the stop sequences to use for the chat
+	 */
 	@Nullable
 	List<String> getStopSequences();
 
+	/**
+	 * Returns the temperature to use for the chat.
+	 * @return the temperature to use for the chat
+	 */
 	@Nullable
 	Double getTemperature();
 
+	/**
+	 * Returns the top K to use for the chat.
+	 * @return the top K to use for the chat
+	 */
 	@Nullable
 	Integer getTopK();
 
+	/**
+	 * Returns the top P to use for the chat.
+	 * @return the top P to use for the chat
+	 */
 	@Nullable
 	Double getTopP();
 
+	/**
+	 * Returns a copy of this {@link ChatOptions}.
+	 * @return a copy of this {@link ChatOptions}
+	 */
 	ChatOptions copy();
 
 }

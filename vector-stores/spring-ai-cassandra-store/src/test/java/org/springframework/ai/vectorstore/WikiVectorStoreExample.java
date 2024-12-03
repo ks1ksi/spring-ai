@@ -1,11 +1,11 @@
 /*
- * Copyright 2024 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.vectorstore;
 
 import java.util.List;
@@ -33,7 +34,6 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 
-import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -108,10 +108,10 @@ class WikiVectorStoreExample {
 					if (primaryKeys.isEmpty()) {
 						return "test§¶0";
 					}
-					return format("%s§¶%s", primaryKeys.get(2), primaryKeys.get(3));
+					return java.lang.String.format("%s§¶%s", primaryKeys.get(2), primaryKeys.get(3));
 				})
 
-				.withDocumentIdTranslator((id) -> {
+				.withDocumentIdTranslator(id -> {
 					String[] parts = id.split("§¶");
 					String title = parts[0];
 					int chunk_no = 0 < parts.length ? Integer.parseInt(parts[1]) : 0;

@@ -16,6 +16,8 @@
 
 package org.springframework.ai.autoconfigure.vectorstore.gemfire;
 
+import io.micrometer.observation.ObservationRegistry;
+
 import org.springframework.ai.embedding.BatchingStrategy;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.TokenCountBatchingStrategy;
@@ -29,9 +31,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
-import io.micrometer.observation.ObservationRegistry;
-
 /**
+ * {@link AutoConfiguration Auto-configuration} for GemFire Vector Store.
+ *
  * @author Geet Rawat
  * @author Christian Tzolov
  * @author Soby Chacko

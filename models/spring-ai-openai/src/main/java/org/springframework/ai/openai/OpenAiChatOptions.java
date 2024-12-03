@@ -1,11 +1,11 @@
 /*
- * Copyright 2023 - 2024 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.ai.openai;
 
 import java.util.ArrayList;
@@ -23,31 +24,31 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.model.ModelOptionsUtils;
-import org.springframework.ai.model.function.FunctionCallback;
-import org.springframework.ai.model.function.FunctionCallingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.ResponseFormat;
-import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.StreamOptions;
-import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.ToolChoiceBuilder;
-import org.springframework.ai.openai.api.OpenAiApi.FunctionTool;
-import org.springframework.boot.context.properties.NestedConfigurationProperty;
-import org.springframework.util.Assert;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import org.springframework.ai.model.ModelOptionsUtils;
+import org.springframework.ai.model.function.FunctionCallback;
+import org.springframework.ai.model.function.FunctionCallingOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.AudioParameters;
+import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.StreamOptions;
+import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.ToolChoiceBuilder;
+import org.springframework.ai.openai.api.ResponseFormat;
+import org.springframework.util.Assert;
+
 /**
+ * Options for the OpenAI Chat API.
+ *
  * @author Christian Tzolov
  * @author Mariusz Bernacki
  * @author Thomas Vitale
  * @since 0.8.0
  */
 @JsonInclude(Include.NON_NULL)
-public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
+public class OpenAiChatOptions implements FunctionCallingOptions {
 
 	// @formatter:off
 	/**
@@ -92,6 +93,27 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	 * on the number of generated tokens across all of the choices. Keep n as 1 to minimize costs.
 	 */
 	private @JsonProperty("n") Integer n;
+
+	/**
+	 * Output types that you would like the model to generate for this request.
+	 * Most models are capable of generating text, which is the default.
+	 * The gpt-4o-audio-preview model can also be used to generate audio.
+	 * To request that this model generate both text and audio responses,
+	 * you can use: ["text", "audio"].
+	 * Note that the audio modality is only available for the gpt-4o-audio-preview model
+	 * and is not supported for streaming completions.
+	 */
+	private @JsonProperty("modalities") List<String> outputModalities;
+
+	/**
+	 * Audio parameters for the audio generation. Required when audio output is requested with
+	 * modalities: ["audio"]
+	 * Note: that the audio modality is only available for the gpt-4o-audio-preview model
+	 * and is not supported for streaming completions.
+
+	 */
+	private @JsonProperty("audio") AudioParameters outputAudio;
+
 	/**
 	 * Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they
 	 * appear in the text so far, increasing the model's likelihood to talk about new topics.
@@ -116,7 +138,6 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	/**
 	 * Up to 4 sequences where the API will stop generating further tokens.
 	 */
-	@NestedConfigurationProperty
 	private @JsonProperty("stop") List<String> stop;
 	/**
 	 * What sampling temperature to use, between 0 and 1. Higher values like 0.8 will make the output
@@ -134,8 +155,7 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	 * A list of tools the model may call. Currently, only functions are supported as a tool. Use this to
 	 * provide a list of functions the model may generate JSON inputs for.
 	 */
-	@NestedConfigurationProperty
-	private @JsonProperty("tools") List<FunctionTool> tools;
+	private @JsonProperty("tools") List<OpenAiApi.FunctionTool> tools;
 	/**
 	 * Controls which (if any) function is called by the model. none means the model will not call a
 	 * function and instead generates a message. auto means the model can pick between generating a message or calling a
@@ -160,7 +180,6 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	 * For Default Options the functionCallbacks are registered but disabled by default. Use the enableFunctions to set the functions
 	 * from the registry to be used by the ChatModel chat completion requests.
 	 */
-	@NestedConfigurationProperty
 	@JsonIgnore
 	private List<FunctionCallback> functionCallbacks = new ArrayList<>();
 
@@ -173,7 +192,6 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	 * Note that function enabled with the default options are enabled for all chat completion requests. This could impact the token count and the billing.
 	 * If the functions is set in a prompt options, then the enabled functions are only active for the duration of this prompt execution.
 	 */
-	@NestedConfigurationProperty
 	@JsonIgnore
 	private Set<String> functions = new HashSet<>();
 
@@ -188,11 +206,9 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	/**
 	 * Optional HTTP headers to be added to the chat completion request.
 	 */
-	@NestedConfigurationProperty
 	@JsonIgnore
 	private Map<String, String> httpHeaders = new HashMap<>();
 
-	@NestedConfigurationProperty
 	@JsonIgnore
 	private Map<String, Object> toolContext;
 
@@ -202,159 +218,35 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 		return new Builder();
 	}
 
-	public static class Builder {
-
-		protected OpenAiChatOptions options;
-
-		public Builder() {
-			this.options = new OpenAiChatOptions();
-		}
-
-		public Builder(OpenAiChatOptions options) {
-			this.options = options;
-		}
-
-		public Builder withModel(String model) {
-			this.options.model = model;
-			return this;
-		}
-
-		public Builder withModel(OpenAiApi.ChatModel openAiChatModel) {
-			this.options.model = openAiChatModel.getName();
-			return this;
-		}
-
-		public Builder withFrequencyPenalty(Double frequencyPenalty) {
-			this.options.frequencyPenalty = frequencyPenalty;
-			return this;
-		}
-
-		public Builder withLogitBias(Map<String, Integer> logitBias) {
-			this.options.logitBias = logitBias;
-			return this;
-		}
-
-		public Builder withLogprobs(Boolean logprobs) {
-			this.options.logprobs = logprobs;
-			return this;
-		}
-
-		public Builder withTopLogprobs(Integer topLogprobs) {
-			this.options.topLogprobs = topLogprobs;
-			return this;
-		}
-
-		public Builder withMaxTokens(Integer maxTokens) {
-			this.options.maxTokens = maxTokens;
-			return this;
-		}
-
-		public Builder withMaxCompletionTokens(Integer maxCompletionTokens) {
-			this.options.maxCompletionTokens = maxCompletionTokens;
-			return this;
-		}
-
-		public Builder withN(Integer n) {
-			this.options.n = n;
-			return this;
-		}
-
-		public Builder withPresencePenalty(Double presencePenalty) {
-			this.options.presencePenalty = presencePenalty;
-			return this;
-		}
-
-		public Builder withResponseFormat(ResponseFormat responseFormat) {
-			this.options.responseFormat = responseFormat;
-			return this;
-		}
-
-		public Builder withStreamUsage(boolean enableStreamUsage) {
-			this.options.streamOptions = (enableStreamUsage) ? StreamOptions.INCLUDE_USAGE : null;
-			return this;
-		}
-
-		public Builder withSeed(Integer seed) {
-			this.options.seed = seed;
-			return this;
-		}
-
-		public Builder withStop(List<String> stop) {
-			this.options.stop = stop;
-			return this;
-		}
-
-		public Builder withTemperature(Double temperature) {
-			this.options.temperature = temperature;
-			return this;
-		}
-
-		public Builder withTopP(Double topP) {
-			this.options.topP = topP;
-			return this;
-		}
-
-		public Builder withTools(List<FunctionTool> tools) {
-			this.options.tools = tools;
-			return this;
-		}
-
-		public Builder withToolChoice(String toolChoice) {
-			this.options.toolChoice = toolChoice;
-			return this;
-		}
-
-		public Builder withUser(String user) {
-			this.options.user = user;
-			return this;
-		}
-
-		public Builder withParallelToolCalls(Boolean parallelToolCalls) {
-			this.options.parallelToolCalls = parallelToolCalls;
-			return this;
-		}
-
-		public Builder withFunctionCallbacks(List<FunctionCallback> functionCallbacks) {
-			this.options.functionCallbacks = functionCallbacks;
-			return this;
-		}
-
-		public Builder withFunctions(Set<String> functionNames) {
-			Assert.notNull(functionNames, "Function names must not be null");
-			this.options.functions = functionNames;
-			return this;
-		}
-
-		public Builder withFunction(String functionName) {
-			Assert.hasText(functionName, "Function name must not be empty");
-			this.options.functions.add(functionName);
-			return this;
-		}
-
-		public Builder withProxyToolCalls(Boolean proxyToolCalls) {
-			this.options.proxyToolCalls = proxyToolCalls;
-			return this;
-		}
-
-		public Builder withHttpHeaders(Map<String, String> httpHeaders) {
-			this.options.httpHeaders = httpHeaders;
-			return this;
-		}
-
-		public Builder withToolContext(Map<String, Object> toolContext) {
-			if (this.options.toolContext == null) {
-				this.options.toolContext = toolContext;
-			}
-			else {
-				this.options.toolContext.putAll(toolContext);
-			}
-			return this;
-		}
-
-		public OpenAiChatOptions build() {
-			return this.options;
-		}
-
+	public static OpenAiChatOptions fromOptions(OpenAiChatOptions fromOptions) {
+		return OpenAiChatOptions.builder()
+			.withModel(fromOptions.getModel())
+			.withFrequencyPenalty(fromOptions.getFrequencyPenalty())
+			.withLogitBias(fromOptions.getLogitBias())
+			.withLogprobs(fromOptions.getLogprobs())
+			.withTopLogprobs(fromOptions.getTopLogprobs())
+			.withMaxTokens(fromOptions.getMaxTokens())
+			.withMaxCompletionTokens(fromOptions.getMaxCompletionTokens())
+			.withN(fromOptions.getN())
+			.withOutputModalities(fromOptions.getOutputModalities())
+			.withOutputAudio(fromOptions.getOutputAudio())
+			.withPresencePenalty(fromOptions.getPresencePenalty())
+			.withResponseFormat(fromOptions.getResponseFormat())
+			.withStreamUsage(fromOptions.getStreamUsage())
+			.withSeed(fromOptions.getSeed())
+			.withStop(fromOptions.getStop())
+			.withTemperature(fromOptions.getTemperature())
+			.withTopP(fromOptions.getTopP())
+			.withTools(fromOptions.getTools())
+			.withToolChoice(fromOptions.getToolChoice())
+			.withUser(fromOptions.getUser())
+			.withParallelToolCalls(fromOptions.getParallelToolCalls())
+			.withFunctionCallbacks(fromOptions.getFunctionCallbacks())
+			.withFunctions(fromOptions.getFunctions())
+			.withHttpHeaders(fromOptions.getHttpHeaders())
+			.withProxyToolCalls(fromOptions.getProxyToolCalls())
+			.withToolContext(fromOptions.getToolContext())
+			.build();
 	}
 
 	public Boolean getStreamUsage() {
@@ -417,7 +309,7 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	}
 
 	public Integer getMaxCompletionTokens() {
-		return maxCompletionTokens;
+		return this.maxCompletionTokens;
 	}
 
 	public void setMaxCompletionTokens(Integer maxCompletionTokens) {
@@ -430,6 +322,22 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 
 	public void setN(Integer n) {
 		this.n = n;
+	}
+
+	public List<String> getOutputModalities() {
+		return outputModalities;
+	}
+
+	public void setOutputModalities(List<String> modalities) {
+		this.outputModalities = modalities;
+	}
+
+	public AudioParameters getOutputAudio() {
+		return outputAudio;
+	}
+
+	public void setOutputAudio(AudioParameters audio) {
+		this.outputAudio = audio;
 	}
 
 	@Override
@@ -450,7 +358,7 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 	}
 
 	public StreamOptions getStreamOptions() {
-		return streamOptions;
+		return this.streamOptions;
 	}
 
 	public void setStreamOptions(StreamOptions streamOptions) {
@@ -502,16 +410,20 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 		this.topP = topP;
 	}
 
-	public List<FunctionTool> getTools() {
+	public List<OpenAiApi.FunctionTool> getTools() {
 		return this.tools;
 	}
 
-	public void setTools(List<FunctionTool> tools) {
+	public void setTools(List<OpenAiApi.FunctionTool> tools) {
 		this.tools = tools;
 	}
 
 	public String getToolChoice() {
 		return this.toolChoice;
+	}
+
+	public void setToolChoice(String toolChoice) {
+		this.toolChoice = toolChoice;
 	}
 
 	@Override
@@ -521,10 +433,6 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 
 	public void setProxyToolCalls(Boolean proxyToolCalls) {
 		this.proxyToolCalls = proxyToolCalls;
-	}
-
-	public void setToolChoice(String toolChoice) {
-		this.toolChoice = toolChoice;
 	}
 
 	public String getUser() {
@@ -555,7 +463,7 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 
 	@Override
 	public Set<String> getFunctions() {
-		return functions;
+		return this.functions;
 	}
 
 	public void setFunctions(Set<String> functionNames) {
@@ -591,50 +499,23 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 		return OpenAiChatOptions.fromOptions(this);
 	}
 
-	public static OpenAiChatOptions fromOptions(OpenAiChatOptions fromOptions) {
-		return OpenAiChatOptions.builder()
-			.withModel(fromOptions.getModel())
-			.withFrequencyPenalty(fromOptions.getFrequencyPenalty())
-			.withLogitBias(fromOptions.getLogitBias())
-			.withLogprobs(fromOptions.getLogprobs())
-			.withTopLogprobs(fromOptions.getTopLogprobs())
-			.withMaxTokens(fromOptions.getMaxTokens())
-			.withMaxCompletionTokens(fromOptions.getMaxCompletionTokens())
-			.withN(fromOptions.getN())
-			.withPresencePenalty(fromOptions.getPresencePenalty())
-			.withResponseFormat(fromOptions.getResponseFormat())
-			.withStreamUsage(fromOptions.getStreamUsage())
-			.withSeed(fromOptions.getSeed())
-			.withStop(fromOptions.getStop())
-			.withTemperature(fromOptions.getTemperature())
-			.withTopP(fromOptions.getTopP())
-			.withTools(fromOptions.getTools())
-			.withToolChoice(fromOptions.getToolChoice())
-			.withUser(fromOptions.getUser())
-			.withParallelToolCalls(fromOptions.getParallelToolCalls())
-			.withFunctionCallbacks(fromOptions.getFunctionCallbacks())
-			.withFunctions(fromOptions.getFunctions())
-			.withHttpHeaders(fromOptions.getHttpHeaders())
-			.withProxyToolCalls(fromOptions.getProxyToolCalls())
-			.withToolContext(fromOptions.getToolContext())
-			.build();
-	}
-
 	@Override
 	public int hashCode() {
 		return Objects.hash(this.model, this.frequencyPenalty, this.logitBias, this.logprobs, this.topLogprobs,
 				this.maxTokens, this.maxCompletionTokens, this.n, this.presencePenalty, this.responseFormat,
 				this.streamOptions, this.seed, this.stop, this.temperature, this.topP, this.tools, this.toolChoice,
 				this.user, this.parallelToolCalls, this.functionCallbacks, this.functions, this.httpHeaders,
-				this.proxyToolCalls, this.toolContext);
+				this.proxyToolCalls, this.toolContext, this.outputModalities, this.outputAudio);
 	}
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		OpenAiChatOptions other = (OpenAiChatOptions) o;
 		return Objects.equals(this.model, other.model) && Objects.equals(this.frequencyPenalty, other.frequencyPenalty)
 				&& Objects.equals(this.logitBias, other.logitBias) && Objects.equals(this.logprobs, other.logprobs)
@@ -652,12 +533,179 @@ public class OpenAiChatOptions implements FunctionCallingOptions, ChatOptions {
 				&& Objects.equals(this.functions, other.functions)
 				&& Objects.equals(this.httpHeaders, other.httpHeaders)
 				&& Objects.equals(this.toolContext, other.toolContext)
-				&& Objects.equals(this.proxyToolCalls, other.proxyToolCalls);
+				&& Objects.equals(this.proxyToolCalls, other.proxyToolCalls)
+				&& Objects.equals(this.outputModalities, other.outputModalities)
+				&& Objects.equals(this.outputAudio, other.outputAudio);
 	}
 
 	@Override
 	public String toString() {
 		return "OpenAiChatOptions: " + ModelOptionsUtils.toJsonString(this);
+	}
+
+	public static class Builder {
+
+		protected OpenAiChatOptions options;
+
+		public Builder() {
+			this.options = new OpenAiChatOptions();
+		}
+
+		public Builder(OpenAiChatOptions options) {
+			this.options = options;
+		}
+
+		public Builder withModel(String model) {
+			this.options.model = model;
+			return this;
+		}
+
+		public Builder withModel(OpenAiApi.ChatModel openAiChatModel) {
+			this.options.model = openAiChatModel.getName();
+			return this;
+		}
+
+		public Builder withFrequencyPenalty(Double frequencyPenalty) {
+			this.options.frequencyPenalty = frequencyPenalty;
+			return this;
+		}
+
+		public Builder withLogitBias(Map<String, Integer> logitBias) {
+			this.options.logitBias = logitBias;
+			return this;
+		}
+
+		public Builder withLogprobs(Boolean logprobs) {
+			this.options.logprobs = logprobs;
+			return this;
+		}
+
+		public Builder withTopLogprobs(Integer topLogprobs) {
+			this.options.topLogprobs = topLogprobs;
+			return this;
+		}
+
+		public Builder withMaxTokens(Integer maxTokens) {
+			this.options.maxTokens = maxTokens;
+			return this;
+		}
+
+		public Builder withMaxCompletionTokens(Integer maxCompletionTokens) {
+			this.options.maxCompletionTokens = maxCompletionTokens;
+			return this;
+		}
+
+		public Builder withN(Integer n) {
+			this.options.n = n;
+			return this;
+		}
+
+		public Builder withOutputModalities(List<String> modalities) {
+			this.options.outputModalities = modalities;
+			return this;
+		}
+
+		public Builder withOutputAudio(AudioParameters audio) {
+			this.options.outputAudio = audio;
+			return this;
+		}
+
+		public Builder withPresencePenalty(Double presencePenalty) {
+			this.options.presencePenalty = presencePenalty;
+			return this;
+		}
+
+		public Builder withResponseFormat(ResponseFormat responseFormat) {
+			this.options.responseFormat = responseFormat;
+			return this;
+		}
+
+		public Builder withStreamUsage(boolean enableStreamUsage) {
+			this.options.streamOptions = (enableStreamUsage) ? StreamOptions.INCLUDE_USAGE : null;
+			return this;
+		}
+
+		public Builder withSeed(Integer seed) {
+			this.options.seed = seed;
+			return this;
+		}
+
+		public Builder withStop(List<String> stop) {
+			this.options.stop = stop;
+			return this;
+		}
+
+		public Builder withTemperature(Double temperature) {
+			this.options.temperature = temperature;
+			return this;
+		}
+
+		public Builder withTopP(Double topP) {
+			this.options.topP = topP;
+			return this;
+		}
+
+		public Builder withTools(List<OpenAiApi.FunctionTool> tools) {
+			this.options.tools = tools;
+			return this;
+		}
+
+		public Builder withToolChoice(String toolChoice) {
+			this.options.toolChoice = toolChoice;
+			return this;
+		}
+
+		public Builder withUser(String user) {
+			this.options.user = user;
+			return this;
+		}
+
+		public Builder withParallelToolCalls(Boolean parallelToolCalls) {
+			this.options.parallelToolCalls = parallelToolCalls;
+			return this;
+		}
+
+		public Builder withFunctionCallbacks(List<FunctionCallback> functionCallbacks) {
+			this.options.functionCallbacks = functionCallbacks;
+			return this;
+		}
+
+		public Builder withFunctions(Set<String> functionNames) {
+			Assert.notNull(functionNames, "Function names must not be null");
+			this.options.functions = functionNames;
+			return this;
+		}
+
+		public Builder withFunction(String functionName) {
+			Assert.hasText(functionName, "Function name must not be empty");
+			this.options.functions.add(functionName);
+			return this;
+		}
+
+		public Builder withProxyToolCalls(Boolean proxyToolCalls) {
+			this.options.proxyToolCalls = proxyToolCalls;
+			return this;
+		}
+
+		public Builder withHttpHeaders(Map<String, String> httpHeaders) {
+			this.options.httpHeaders = httpHeaders;
+			return this;
+		}
+
+		public Builder withToolContext(Map<String, Object> toolContext) {
+			if (this.options.toolContext == null) {
+				this.options.toolContext = toolContext;
+			}
+			else {
+				this.options.toolContext.putAll(toolContext);
+			}
+			return this;
+		}
+
+		public OpenAiChatOptions build() {
+			return this.options;
+		}
+
 	}
 
 }
