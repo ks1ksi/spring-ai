@@ -49,7 +49,6 @@ import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetri
 import org.springframework.ai.vectorstore.filter.FilterExpressionConverter;
 import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext.Builder;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
@@ -206,7 +205,8 @@ public class OracleVectorStore extends AbstractObservationVectorStore implements
 
 	@Override
 	public void doAdd(final List<Document> documents) {
-		this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(), this.batchingStrategy);
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+				this.batchingStrategy);
 		this.jdbcTemplate.batchUpdate(getIngestStatement(), new BatchPreparedStatementSetter() {
 
 			@Override
@@ -214,7 +214,7 @@ public class OracleVectorStore extends AbstractObservationVectorStore implements
 				final Document document = documents.get(i);
 				final String content = document.getContent();
 				final byte[] json = toJson(document.getMetadata());
-				final VECTOR embeddingVector = toVECTOR(document.getEmbedding());
+				final VECTOR embeddingVector = toVECTOR(embeddings.get(documents.indexOf(document)));
 
 				org.springframework.jdbc.core.StatementCreatorUtils.setParameterValue(ps, 1, Types.VARCHAR,
 						document.getId());
@@ -548,11 +548,11 @@ public class OracleVectorStore extends AbstractObservationVectorStore implements
 	}
 
 	@Override
-	public Builder createObservationContextBuilder(String operationName) {
+	public VectorStoreObservationContext.Builder createObservationContextBuilder(String operationName) {
 		return VectorStoreObservationContext.builder(VectorStoreProvider.ORACLE.value(), operationName)
-			.withDimensions(this.embeddingModel.dimensions())
-			.withCollectionName(this.getTableName())
-			.withSimilarityMetric(getSimilarityMetric());
+			.dimensions(this.embeddingModel.dimensions())
+			.collectionName(this.getTableName())
+			.similarityMetric(getSimilarityMetric());
 	}
 
 	private String getSimilarityMetric() {
@@ -653,13 +653,11 @@ public class OracleVectorStore extends AbstractObservationVectorStore implements
 			final Map<String, Object> metadata = getMap(rs.getObject(3, OracleJsonValue.class));
 			metadata.put(DocumentMetadata.DISTANCE.value(), rs.getDouble(5));
 
-			final float[] embedding = rs.getObject(4, float[].class);
 			return Document.builder()
 				.id(rs.getString(1))
-				.content(rs.getString(2))
+				.text(rs.getString(2))
 				.metadata(metadata)
 				.score(1 - rs.getDouble(5))
-				.embedding(embedding)
 				.build();
 		}
 

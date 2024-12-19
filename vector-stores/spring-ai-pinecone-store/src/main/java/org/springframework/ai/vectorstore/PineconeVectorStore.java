@@ -124,11 +124,12 @@ public class PineconeVectorStore extends AbstractObservationVectorStore {
 	 * @param namespace The namespace to add the documents to
 	 */
 	public void add(List<Document> documents, String namespace) {
-		this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(), this.batchingStrategy);
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+				this.batchingStrategy);
 		List<Vector> upsertVectors = documents.stream()
 			.map(document -> Vector.newBuilder()
 				.setId(document.getId())
-				.addAllValues(EmbeddingUtils.toList(document.getEmbedding()))
+				.addAllValues(EmbeddingUtils.toList(embeddings.get(documents.indexOf(document))))
 				.setMetadata(metadataToStruct(document))
 				.build())
 			.toList();
@@ -238,7 +239,7 @@ public class PineconeVectorStore extends AbstractObservationVectorStore {
 				metadata.put(this.pineconeDistanceMetadataFieldName, 1 - scoredVector.getScore());
 				return Document.builder()
 					.id(id)
-					.content(content)
+					.text(content)
 					.metadata(metadata)
 					.score((double) scoredVector.getScore())
 					.build();
@@ -286,10 +287,10 @@ public class PineconeVectorStore extends AbstractObservationVectorStore {
 	public VectorStoreObservationContext.Builder createObservationContextBuilder(String operationName) {
 
 		return VectorStoreObservationContext.builder(VectorStoreProvider.PINECONE.value(), operationName)
-			.withCollectionName(this.pineconeIndexName)
-			.withDimensions(this.embeddingModel.dimensions())
-			.withNamespace(this.pineconeNamespace)
-			.withFieldName(this.pineconeContentFieldName);
+			.collectionName(this.pineconeIndexName)
+			.dimensions(this.embeddingModel.dimensions())
+			.namespace(this.pineconeNamespace)
+			.fieldName(this.pineconeContentFieldName);
 	}
 
 	/**

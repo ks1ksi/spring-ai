@@ -36,6 +36,8 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.metadata.UsageUtils;
 import org.springframework.ai.chat.model.AbstractToolCallSupport;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -46,7 +48,6 @@ import org.springframework.ai.chat.observation.ChatModelObservationConvention;
 import org.springframework.ai.chat.observation.ChatModelObservationDocumentation;
 import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
 import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.chat.prompt.ChatOptionsBuilder;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.mistralai.api.MistralAiApi;
 import org.springframework.ai.mistralai.api.MistralAiApi.ChatCompletion;
@@ -75,6 +76,8 @@ import org.springframework.util.CollectionUtils;
  * @author Grogdunn
  * @author Thomas Vitale
  * @author luocongqiu
+ * @author Ilayaperumal Gopinathan
+ * @author Alexandros Pappas
  * @since 1.0.0
  */
 public class MistralAiChatModel extends AbstractToolCallSupport implements ChatModel {
@@ -108,10 +111,10 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 	public MistralAiChatModel(MistralAiApi mistralAiApi) {
 		this(mistralAiApi,
 				MistralAiChatOptions.builder()
-					.withTemperature(0.7)
-					.withTopP(1.0)
-					.withSafePrompt(false)
-					.withModel(MistralAiApi.ChatModel.OPEN_MISTRAL_7B.getValue())
+					.temperature(0.7)
+					.topP(1.0)
+					.safePrompt(false)
+					.model(MistralAiApi.ChatModel.OPEN_MISTRAL_7B.getValue())
 					.build());
 	}
 
@@ -149,15 +152,29 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 		Assert.notNull(result, "Mistral AI ChatCompletion must not be null");
 		MistralAiUsage usage = MistralAiUsage.from(result.usage());
 		return ChatResponseMetadata.builder()
-			.withId(result.id())
-			.withModel(result.model())
-			.withUsage(usage)
-			.withKeyValue("created", result.created())
+			.id(result.id())
+			.model(result.model())
+			.usage(usage)
+			.keyValue("created", result.created())
+			.build();
+	}
+
+	public static ChatResponseMetadata from(MistralAiApi.ChatCompletion result, Usage usage) {
+		Assert.notNull(result, "Mistral AI ChatCompletion must not be null");
+		return ChatResponseMetadata.builder()
+			.id(result.id())
+			.model(result.model())
+			.usage(usage)
+			.keyValue("created", result.created())
 			.build();
 	}
 
 	@Override
 	public ChatResponse call(Prompt prompt) {
+		return this.internalCall(prompt, null);
+	}
+
+	public ChatResponse internalCall(Prompt prompt, ChatResponse previousChatResponse) {
 
 		MistralAiApi.ChatCompletionRequest request = createRequest(prompt, false);
 
@@ -193,7 +210,10 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 					return buildGeneration(choice, metadata);
 				}).toList();
 
-				ChatResponse chatResponse = new ChatResponse(generations, from(completionEntity.getBody()));
+				MistralAiUsage usage = MistralAiUsage.from(completionEntity.getBody().usage());
+				Usage cumulativeUsage = UsageUtils.getCumulativeUsage(usage, previousChatResponse);
+				ChatResponse chatResponse = new ChatResponse(generations,
+						from(completionEntity.getBody(), cumulativeUsage));
 
 				observationContext.setResponse(chatResponse);
 
@@ -206,7 +226,7 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 			var toolCallConversation = handleToolCalls(prompt, response);
 			// Recursively call the call method with the tool call message
 			// conversation that contains the call responses.
-			return this.call(new Prompt(toolCallConversation, prompt.getOptions()));
+			return this.internalCall(new Prompt(toolCallConversation, prompt.getOptions()), response);
 		}
 
 		return response;
@@ -214,6 +234,10 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 
 	@Override
 	public Flux<ChatResponse> stream(Prompt prompt) {
+		return this.internalStream(prompt, null);
+	}
+
+	public Flux<ChatResponse> internalStream(Prompt prompt, ChatResponse previousChatResponse) {
 		return Flux.deferContextual(contextView -> {
 			var request = createRequest(prompt, true);
 
@@ -259,7 +283,9 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 							// @formatter:on
 
 						if (chatCompletion2.usage() != null) {
-							return new ChatResponse(generations, from(chatCompletion2));
+							MistralAiUsage usage = MistralAiUsage.from(chatCompletion2.usage());
+							Usage cumulativeUsage = UsageUtils.getCumulativeUsage(usage, previousChatResponse);
+							return new ChatResponse(generations, from(chatCompletion2, cumulativeUsage));
 						}
 						else {
 							return new ChatResponse(generations);
@@ -277,7 +303,7 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 					var toolCallConversation = handleToolCalls(prompt, response);
 					// Recursively call the stream method with the tool call message
 					// conversation that contains the call responses.
-					return this.stream(new Prompt(toolCallConversation, prompt.getOptions()));
+					return this.internalStream(new Prompt(toolCallConversation, prompt.getOptions()), response);
 				}
 				else {
 					return Flux.just(response);
@@ -314,7 +340,8 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 			.map(cc -> new Choice(cc.index(), cc.delta(), cc.finishReason(), cc.logprobs()))
 			.toList();
 
-		return new ChatCompletion(chunk.id(), "chat.completion", chunk.created(), chunk.model(), choices, null);
+		return new ChatCompletion(chunk.id(), "chat.completion", chunk.created(), chunk.model(), choices,
+				chunk.usage());
 	}
 
 	/**
@@ -326,11 +353,11 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 
 		List<ChatCompletionMessage> chatCompletionMessages = prompt.getInstructions().stream().map(message -> {
 			if (message instanceof UserMessage userMessage) {
-				return List.of(new MistralAiApi.ChatCompletionMessage(userMessage.getContent(),
+				return List.of(new MistralAiApi.ChatCompletionMessage(userMessage.getText(),
 						MistralAiApi.ChatCompletionMessage.Role.USER));
 			}
 			else if (message instanceof SystemMessage systemMessage) {
-				return List.of(new MistralAiApi.ChatCompletionMessage(systemMessage.getContent(),
+				return List.of(new MistralAiApi.ChatCompletionMessage(systemMessage.getText(),
 						MistralAiApi.ChatCompletionMessage.Role.SYSTEM));
 			}
 			else if (message instanceof AssistantMessage assistantMessage) {
@@ -342,7 +369,7 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 					}).toList();
 				}
 
-				return List.of(new MistralAiApi.ChatCompletionMessage(assistantMessage.getContent(),
+				return List.of(new MistralAiApi.ChatCompletionMessage(assistantMessage.getText(),
 						MistralAiApi.ChatCompletionMessage.Role.ASSISTANT, null, toolCalls, null));
 			}
 			else if (message instanceof ToolResponseMessage toolResponseMessage) {
@@ -390,7 +417,7 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 		if (!CollectionUtils.isEmpty(functionsForThisRequest)) {
 
 			request = ModelOptionsUtils.merge(
-					MistralAiChatOptions.builder().withTools(this.getFunctionTools(functionsForThisRequest)).build(),
+					MistralAiChatOptions.builder().tools(this.getFunctionTools(functionsForThisRequest)).build(),
 					request, ChatCompletionRequest.class);
 		}
 
@@ -406,12 +433,12 @@ public class MistralAiChatModel extends AbstractToolCallSupport implements ChatM
 	}
 
 	private ChatOptions buildRequestOptions(MistralAiApi.ChatCompletionRequest request) {
-		return ChatOptionsBuilder.builder()
-			.withModel(request.model())
-			.withMaxTokens(request.maxTokens())
-			.withStopSequences(request.stop())
-			.withTemperature(request.temperature())
-			.withTopP(request.topP())
+		return ChatOptions.builder()
+			.model(request.model())
+			.maxTokens(request.maxTokens())
+			.stopSequences(request.stop())
+			.temperature(request.temperature())
+			.topP(request.topP())
 			.build();
 	}
 

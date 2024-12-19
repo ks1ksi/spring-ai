@@ -53,6 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Christian Tzolov
+ * @author Alexandros Pappas
  * @since 0.8.1
  */
 @SpringBootTest(classes = MistralAiTestConfiguration.class)
@@ -93,7 +94,7 @@ class MistralAiChatModelIT {
 		Prompt prompt = new Prompt(List.of(systemMessage, userMessage));
 		ChatResponse response = this.chatModel.call(prompt);
 		assertThat(response.getResults()).hasSize(1);
-		assertThat(response.getResults().get(0).getOutput().getContent()).contains("Blackbeard");
+		assertThat(response.getResults().get(0).getOutput().getText()).contains("Blackbeard");
 	}
 
 	@Test
@@ -111,7 +112,7 @@ class MistralAiChatModelIT {
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
 		Generation generation = this.chatModel.call(prompt).getResult();
 
-		List<String> list = outputConverter.convert(generation.getOutput().getContent());
+		List<String> list = outputConverter.convert(generation.getOutput().getText());
 		assertThat(list).hasSize(5);
 	}
 
@@ -129,7 +130,7 @@ class MistralAiChatModelIT {
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
 		Generation generation = this.chatModel.call(prompt).getResult();
 
-		Map<String, Object> result = outputConverter.convert(generation.getOutput().getContent());
+		Map<String, Object> result = outputConverter.convert(generation.getOutput().getText());
 		assertThat(result.get("numbers")).isEqualTo(Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9));
 
 	}
@@ -148,7 +149,7 @@ class MistralAiChatModelIT {
 		Prompt prompt = new Prompt(promptTemplate.createMessage());
 		Generation generation = this.chatModel.call(prompt).getResult();
 
-		ActorsFilmsRecord actorsFilms = outputConverter.convert(generation.getOutput().getContent());
+		ActorsFilmsRecord actorsFilms = outputConverter.convert(generation.getOutput().getText());
 		logger.info("" + actorsFilms);
 		assertThat(actorsFilms.actor()).isEqualTo("Tom Hanks");
 		assertThat(actorsFilms.movies()).hasSize(5);
@@ -174,7 +175,7 @@ class MistralAiChatModelIT {
 			.map(ChatResponse::getResults)
 			.flatMap(List::stream)
 			.map(Generation::getOutput)
-			.map(AssistantMessage::getContent)
+			.map(AssistantMessage::getText)
 			.collect(Collectors.joining());
 
 		ActorsFilmsRecord actorsFilms = outputConverter.convert(generationTextFromStream);
@@ -192,8 +193,8 @@ class MistralAiChatModelIT {
 		List<Message> messages = new ArrayList<>(List.of(userMessage));
 
 		var promptOptions = MistralAiChatOptions.builder()
-			.withModel(MistralAiApi.ChatModel.SMALL.getValue())
-			.withFunctionCallbacks(List.of(FunctionCallback.builder()
+			.model(MistralAiApi.ChatModel.SMALL.getValue())
+			.functionCallbacks(List.of(FunctionCallback.builder()
 				.function("getCurrentWeather", new MockWeatherService())
 				.description("Get the weather in location")
 				.inputType(MockWeatherService.Request.class)
@@ -204,7 +205,10 @@ class MistralAiChatModelIT {
 
 		logger.info("Response: {}", response);
 
-		assertThat(response.getResult().getOutput().getContent()).containsAnyOf("30.0", "30");
+		assertThat(response.getResult().getOutput().getText()).containsAnyOf("30.0", "30");
+		assertThat(response.getMetadata()).isNotNull();
+		assertThat(response.getMetadata().getUsage()).isNotNull();
+		assertThat(response.getMetadata().getUsage().getTotalTokens()).isLessThan(1050).isGreaterThan(800);
 	}
 
 	@Test
@@ -215,8 +219,8 @@ class MistralAiChatModelIT {
 		List<Message> messages = new ArrayList<>(List.of(userMessage));
 
 		var promptOptions = MistralAiChatOptions.builder()
-			.withModel(MistralAiApi.ChatModel.SMALL.getValue())
-			.withFunctionCallbacks(List.of(FunctionCallback.builder()
+			.model(MistralAiApi.ChatModel.SMALL.getValue())
+			.functionCallbacks(List.of(FunctionCallback.builder()
 				.function("getCurrentWeather", new MockWeatherService())
 				.description("Get the weather in location")
 				.inputType(MockWeatherService.Request.class)
@@ -231,11 +235,37 @@ class MistralAiChatModelIT {
 			.map(ChatResponse::getResults)
 			.flatMap(List::stream)
 			.map(Generation::getOutput)
-			.map(AssistantMessage::getContent)
+			.map(AssistantMessage::getText)
 			.collect(Collectors.joining());
 		logger.info("Response: {}", content);
 
 		assertThat(content).containsAnyOf("10.0", "10");
+	}
+
+	@Test
+	void streamFunctionCallUsageTest() {
+
+		UserMessage userMessage = new UserMessage(
+				"What's the weather like in San Francisco, Tokyo, and Paris? Response in Celsius");
+
+		List<Message> messages = new ArrayList<>(List.of(userMessage));
+
+		var promptOptions = MistralAiChatOptions.builder()
+			.model(MistralAiApi.ChatModel.SMALL.getValue())
+			.functionCallbacks(List.of(FunctionCallback.builder()
+				.function("getCurrentWeather", new MockWeatherService())
+				.description("Get the weather in location")
+				.inputType(MockWeatherService.Request.class)
+				.build()))
+			.build();
+
+		Flux<ChatResponse> response = this.streamingChatModel.stream(new Prompt(messages, promptOptions));
+		ChatResponse chatResponse = response.last().block();
+
+		logger.info("Response: {}", chatResponse);
+		assertThat(chatResponse.getMetadata()).isNotNull();
+		assertThat(chatResponse.getMetadata().getUsage()).isNotNull();
+		assertThat(chatResponse.getMetadata().getUsage().getTotalTokens()).isLessThan(1050).isGreaterThan(800);
 	}
 
 	record ActorsFilmsRecord(String actor, List<String> movies) {

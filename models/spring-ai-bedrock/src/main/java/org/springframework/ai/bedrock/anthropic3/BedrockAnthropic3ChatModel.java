@@ -55,6 +55,7 @@ import org.springframework.util.CollectionUtils;
  * @author Ben Middleton
  * @author Christian Tzolov
  * @author Wei Jiang
+ * @author Alexandros Pappas
  * @since 1.0.0
  */
 public class BedrockAnthropic3ChatModel implements ChatModel, StreamingChatModel {
@@ -66,10 +67,10 @@ public class BedrockAnthropic3ChatModel implements ChatModel, StreamingChatModel
 	public BedrockAnthropic3ChatModel(Anthropic3ChatBedrockApi chatApi) {
 		this(chatApi,
 				Anthropic3ChatOptions.builder()
-					.withTemperature(0.8)
-					.withMaxTokens(500)
-					.withTopK(10)
-					.withAnthropicVersion(Anthropic3ChatBedrockApi.DEFAULT_ANTHROPIC_VERSION)
+					.temperature(0.8)
+					.maxTokens(500)
+					.topK(10)
+					.anthropicVersion(Anthropic3ChatBedrockApi.DEFAULT_ANTHROPIC_VERSION)
 					.build());
 	}
 
@@ -92,9 +93,9 @@ public class BedrockAnthropic3ChatModel implements ChatModel, StreamingChatModel
 			.toList();
 
 		ChatResponseMetadata metadata = ChatResponseMetadata.builder()
-			.withId(response.id())
-			.withModel(response.model())
-			.withUsage(extractUsage(response))
+			.id(response.id())
+			.model(response.model())
+			.usage(extractUsage(response))
 			.build();
 
 		return new ChatResponse(generations, metadata);
@@ -138,7 +139,7 @@ public class BedrockAnthropic3ChatModel implements ChatModel, StreamingChatModel
 	AnthropicChatRequest createRequest(Prompt prompt) {
 
 		AnthropicChatRequest request = AnthropicChatRequest.builder(toAnthropicMessages(prompt))
-			.withSystem(toAnthropicSystemContext(prompt))
+			.system(toAnthropicSystemContext(prompt))
 			.build();
 
 		if (this.defaultOptions != null) {
@@ -164,7 +165,7 @@ public class BedrockAnthropic3ChatModel implements ChatModel, StreamingChatModel
 		return prompt.getInstructions()
 			.stream()
 			.filter(m -> m.getMessageType() == MessageType.SYSTEM)
-			.map(Message::getContent)
+			.map(Message::getText)
 			.collect(Collectors.joining(System.lineSeparator()));
 	}
 
@@ -179,7 +180,7 @@ public class BedrockAnthropic3ChatModel implements ChatModel, StreamingChatModel
 			.stream()
 			.filter(m -> m.getMessageType() == MessageType.USER || m.getMessageType() == MessageType.ASSISTANT)
 			.map(message -> {
-				List<MediaContent> contents = new ArrayList<>(List.of(new MediaContent(message.getContent())));
+				List<MediaContent> contents = new ArrayList<>(List.of(new MediaContent(message.getText())));
 				if (message instanceof UserMessage userMessage) {
 					if (!CollectionUtils.isEmpty(userMessage.getMedia())) {
 						List<MediaContent> mediaContent = userMessage.getMedia()

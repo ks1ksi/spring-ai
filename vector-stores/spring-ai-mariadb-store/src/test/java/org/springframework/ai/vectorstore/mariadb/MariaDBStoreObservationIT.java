@@ -27,6 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
+
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.ai.document.Document;
@@ -175,10 +177,12 @@ public class MariaDBStoreObservationIT {
 		@Bean
 		public VectorStore vectorStore(JdbcTemplate jdbcTemplate, EmbeddingModel embeddingModel,
 				ObservationRegistry observationRegistry) {
-			return new MariaDBVectorStore.Builder(jdbcTemplate, embeddingModel).withSchemaName(schemaName)
-				.withDistanceType(MariaDBVectorStore.MariaDBDistanceType.COSINE)
-				.withObservationRegistry(observationRegistry)
-				.withInitializeSchema(true)
+			return MariaDBVectorStore.builder(jdbcTemplate)
+				.embeddingModel(embeddingModel)
+				.schemaName(schemaName)
+				.distanceType(MariaDBVectorStore.MariaDBDistanceType.COSINE)
+				.observationRegistry(observationRegistry)
+				.initializeSchema(true)
 				.build();
 		}
 

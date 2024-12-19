@@ -59,7 +59,6 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.filter.FilterExpressionConverter;
 import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
-import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext.Builder;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationConvention;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
@@ -223,12 +222,13 @@ public class AzureVectorStore extends AbstractObservationVectorStore implements 
 			return; // nothing to do;
 		}
 
-		this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(), this.batchingStrategy);
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+				this.batchingStrategy);
 
 		final var searchDocuments = documents.stream().map(document -> {
 			SearchDocument searchDocument = new SearchDocument();
 			searchDocument.put(ID_FIELD_NAME, document.getId());
-			searchDocument.put(EMBEDDING_FIELD_NAME, document.getEmbedding());
+			searchDocument.put(EMBEDDING_FIELD_NAME, embeddings.get(documents.indexOf(document)));
 			searchDocument.put(CONTENT_FIELD_NAME, document.getContent());
 			searchDocument.put(METADATA_FIELD_NAME, new JSONObject(document.getMetadata()).toJSONString());
 
@@ -324,10 +324,9 @@ public class AzureVectorStore extends AbstractObservationVectorStore implements 
 
 				return Document.builder()
 					.id(entry.id())
-					.content(entry.content)
+					.text(entry.content)
 					.metadata(metadata)
 					.score(result.getScore())
-					.embedding(EmbeddingUtils.toPrimitive(entry.embedding))
 					.build();
 			})
 			.collect(Collectors.toList());
@@ -387,12 +386,12 @@ public class AzureVectorStore extends AbstractObservationVectorStore implements 
 	}
 
 	@Override
-	public Builder createObservationContextBuilder(String operationName) {
+	public VectorStoreObservationContext.Builder createObservationContextBuilder(String operationName) {
 
 		return VectorStoreObservationContext.builder(VectorStoreProvider.AZURE.value(), operationName)
-			.withCollectionName(this.indexName)
-			.withDimensions(this.embeddingModel.dimensions())
-			.withSimilarityMetric(this.initializeSchema ? VectorStoreSimilarityMetric.COSINE.value() : null);
+			.collectionName(this.indexName)
+			.dimensions(this.embeddingModel.dimensions())
+			.similarityMetric(this.initializeSchema ? VectorStoreSimilarityMetric.COSINE.value() : null);
 	}
 
 	public record MetadataField(String name, SearchFieldDataType fieldType) {

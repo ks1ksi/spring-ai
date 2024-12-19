@@ -208,10 +208,11 @@ public class GemFireVectorStore extends AbstractObservationVectorStore implement
 
 	@Override
 	public void doAdd(List<Document> documents) {
-		this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(), this.batchingStrategy);
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+				this.batchingStrategy);
 		UploadRequest upload = new UploadRequest(documents.stream()
-			.map(document -> new UploadRequest.Embedding(document.getId(), document.getEmbedding(), DOCUMENT_FIELD,
-					document.getContent(), document.getMetadata()))
+			.map(document -> new UploadRequest.Embedding(document.getId(), embeddings.get(documents.indexOf(document)),
+					DOCUMENT_FIELD, document.getContent(), document.getMetadata()))
 			.toList());
 
 		String embeddingsJson = null;
@@ -272,7 +273,7 @@ public class GemFireVectorStore extends AbstractObservationVectorStore implement
 				}
 				metadata.put(DocumentMetadata.DISTANCE.value(), 1 - r.score);
 				String content = (String) metadata.remove(DOCUMENT_FIELD);
-				return Document.builder().id(r.key).content(content).metadata(metadata).score((double) r.score).build();
+				return Document.builder().id(r.key).text(content).metadata(metadata).score((double) r.score).build();
 			})
 			.collectList()
 			.onErrorMap(WebClientException.class, this::handleHttpClientException)
@@ -339,9 +340,9 @@ public class GemFireVectorStore extends AbstractObservationVectorStore implement
 	@Override
 	public VectorStoreObservationContext.Builder createObservationContextBuilder(String operationName) {
 		return VectorStoreObservationContext.builder(VectorStoreProvider.GEMFIRE.value(), operationName)
-			.withCollectionName(this.indexName)
-			.withDimensions(this.embeddingModel.dimensions())
-			.withFieldName(EMBEDDINGS);
+			.collectionName(this.indexName)
+			.dimensions(this.embeddingModel.dimensions())
+			.fieldName(EMBEDDINGS);
 	}
 
 	public static class CreateRequest {

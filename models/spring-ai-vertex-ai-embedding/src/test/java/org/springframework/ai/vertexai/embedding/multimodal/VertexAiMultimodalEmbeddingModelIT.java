@@ -111,7 +111,10 @@ class VertexAiMultimodalEmbeddingModelIT {
 		assertThat(this.multiModelEmbeddingModel).isNotNull();
 
 		var document = Document.builder()
-			.media(new Media(MimeTypeUtils.TEXT_PLAIN, URI.create("http://example.com/image.png").toURL()))
+			.media(Media.builder()
+				.mimeType(MimeTypeUtils.TEXT_PLAIN)
+				.data(URI.create("http://example.com/image.png").toURL())
+				.build())
 			.build();
 
 		DocumentEmbeddingRequest embeddingRequest = new DocumentEmbeddingRequest(document);
@@ -186,7 +189,7 @@ class VertexAiMultimodalEmbeddingModelIT {
 	void textImageAndVideoEmbedding() {
 
 		var document = Document.builder()
-			.content("Hello World")
+			.text("Hello World")
 			.media(new Media(MimeTypeUtils.IMAGE_PNG, new ClassPathResource("/test.image.png")))
 			.media(new Media(new MimeType("video", "mp4"), new ClassPathResource("/test.video.mp4")))
 			.build();
@@ -222,8 +225,8 @@ class VertexAiMultimodalEmbeddingModelIT {
 		@Bean
 		public VertexAiEmbeddingConnectionDetails connectionDetails() {
 			return VertexAiEmbeddingConnectionDetails.builder()
-				.withProjectId(System.getenv("VERTEX_AI_GEMINI_PROJECT_ID"))
-				.withLocation(System.getenv("VERTEX_AI_GEMINI_LOCATION"))
+				.projectId(System.getenv("VERTEX_AI_GEMINI_PROJECT_ID"))
+				.location(System.getenv("VERTEX_AI_GEMINI_LOCATION"))
 				.build();
 		}
 
@@ -232,7 +235,7 @@ class VertexAiMultimodalEmbeddingModelIT {
 				VertexAiEmbeddingConnectionDetails connectionDetails) {
 
 			VertexAiMultimodalEmbeddingOptions options = VertexAiMultimodalEmbeddingOptions.builder()
-				.withModel(VertexAiMultimodalEmbeddingModelName.MULTIMODAL_EMBEDDING_001)
+				.model(VertexAiMultimodalEmbeddingModelName.MULTIMODAL_EMBEDDING_001)
 				.build();
 
 			return new VertexAiMultimodalEmbeddingModel(connectionDetails, options);

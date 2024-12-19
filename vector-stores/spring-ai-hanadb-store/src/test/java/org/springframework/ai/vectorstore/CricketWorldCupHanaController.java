@@ -84,13 +84,13 @@ public class CricketWorldCupHanaController {
 	@GetMapping("/ai/hana-vector-store/cricket-world-cup")
 	public Map<String, String> hanaVectorStoreSearch(@RequestParam("message") String message) {
 		var documents = this.hanaCloudVectorStore.similaritySearch(message);
-		var inlined = documents.stream().map(Document::getContent).collect(Collectors.joining(System.lineSeparator()));
+		var inlined = documents.stream().map(Document::getText).collect(Collectors.joining(System.lineSeparator()));
 		var similarDocsMessage = new SystemPromptTemplate("Based on the following: {documents}")
 			.createMessage(Map.of("documents", inlined));
 
 		var userMessage = new UserMessage(message);
 		Prompt prompt = new Prompt(List.of(similarDocsMessage, userMessage));
-		String generation = this.chatModel.call(prompt).getResult().getOutput().getContent();
+		String generation = this.chatModel.call(prompt).getResult().getOutput().getText();
 		logger.info("Generation: {}", generation);
 		return Map.of("generation", generation);
 	}
